@@ -1,22 +1,37 @@
 /**
- * OpenWA Exact 1-to-1 Chat Forwarder
- * Source Number (9785060088) se aane wale kisi bhi message ko
- * Destination Number (8005844014) par exact "SAME TO SAME" direct send karega.
+ * OpenWA Smart Name-Capture & Lead Forwarder Bot
+ * 1. Jab koi naya person message karega -> Bot usse uska Naam (Name) poochhega.
+ * 2. Jaise hi vo apna Naam batayega -> Uski puri detail (Naam, Phone No, Message) turant 8005844014 par forward ho jayegi.
+ * 3. Aage ke sare messages bhi uske naam ke sath aapko aate rahenge.
  */
 
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 
 // ==================== CONFIGURATION ====================
-// 1. Source Phone (Jiske messages forward karne hain)
-const SOURCE_PHONE = '9785060088'; // 9785060088
-
-// 2. Destination Phone (Jahan exact same message send karna hai)
+// Destination Phone Number (Aapka number jahan sabhi logo ki details aayengi)
 const TARGET_PHONE = '918005844014@c.us'; // 8005844014
 
-// 3. OpenWA Server settings
+// OpenWA API Settings
 const OPENWA_API_URL = 'http://localhost:2785';
 const OPENWA_API_KEY = 'owa_k1_930acb556bf7389edc17aaaf28e502b71e995d0c976322ab7ce8b44617b14aa2';
 const PORT = 3000;
+
+// Contacts memory file (taaki server restart hone par bhi naam yaad rahe)
+const DB_FILE = path.join(__dirname, 'contacts_memory.json');
+let userStates = {};
+if (fs.existsSync(DB_FILE)) {
+  try {
+    userStates = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+  } catch {}
+}
+
+function saveStates() {
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(userStates, null, 2), 'utf8');
+  } catch {}
+}
 // =======================================================
 
 const server = http.createServer(async (req, res) => {
@@ -39,32 +54,77 @@ const server = http.createServer(async (req, res) => {
 
         if (event === 'message.received' || (!event && (payload.body || payload.text))) {
           const from = (payload.from || payload.sender || '');
-          const senderPhone = (payload.author || payload.senderPhone || payload.phone || from).replace(/\D/g, '');
-          const text = payload.body || payload.text || payload.caption || '';
+          const isGroup = from.includes('@g.us') || payload.isGroup === true;
+          const text = (payload.body || payload.text || payload.caption || '').trim();
           const isFromMe = payload.fromMe === true;
+          const senderPhone = (payload.author || payload.senderPhone || payload.phone || from).replace(/\D/g, '');
+          const pushName = payload.notifyName || payload.pushname || '';
 
-          // Apne khud ke messages ko ignore karein
-          if (isFromMe || !text) {
+          // Ignore self messages, groups, status broadcasts, or empty text
+          if (isFromMe || isGroup || from.includes('@broadcast') || !text || !from) {
             return;
           }
 
-          // Check if message is from the specific SOURCE_PHONE (9785060088)
-          const isFromSource = from.includes(SOURCE_PHONE) || senderPhone.includes(SOURCE_PHONE);
-
-          if (!isFromSource) {
+          // Don't auto-reply if target number itself messages
+          if (from.includes('8005844014')) {
             return;
           }
 
-          console.log(`\n========================================`);
-          console.log(`📩 Message from 9785060088: "${text}"`);
-          console.log(`🚀 Sending same to same to ${TARGET_PHONE}...`);
-          console.log(`========================================`);
+          console.log(`\n📩 Incoming Message from +${senderPhone}: "${text}"`);
 
-          // Exact same to same message text bina kisi extra detail ke forward karein
-          await sendDirectMessage(sessionId, text);
+          const userKey = from.replace('@s.whatsapp.net', '@c.us');
+          const timeString = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+
+          // State 1: Pehli baar message aaya hai (New User)
+          if (!userStates[userKey] || userStates[userKey].stage === 'new') {
+            userStates[userKey] = {
+              stage: 'asked_name',
+              firstMsg: text,
+              phone: senderPhone,
+              time: timeString,
+            };
+            saveStates();
+
+            console.log(`🤖 Asking name from +${senderPhone}...`);
+
+            // Saamne wale ko auto-reply karke uska naam poochhein
+            await sendMessage(sessionId, userKey, `Namaste! 🙏\nKripya apna shubh *Naam (Name)* batayein?`);
+
+            // Aapke number (8005844014) par notification bhejein
+            const initialAlert = `🔔 *Naya WhatsApp Message Aaya!*\n📱 *Number:* +${senderPhone}\n💬 *Message:* ${text}\n⏰ *Time:* ${timeString}\n⏳ *Status:* Naam poochha gaya hai...`;
+            await sendMessage(sessionId, TARGET_PHONE, initialAlert);
+          }
+          // State 2: Saamne wale ne apna Naam reply kiya hai
+          else if (userStates[userKey].stage === 'asked_name') {
+            const userName = text;
+            userStates[userKey].name = userName;
+            userStates[userKey].stage = 'registered';
+            saveStates();
+
+            console.log(`👤 User +${senderPhone} provided Name: "${userName}"`);
+
+            // Saamne wale ko confirmation reply bhejein
+            await sendMessage(
+              sessionId,
+              userKey,
+              `Dhanyawad *${userName}* ji! 🙏\nAapka message hum tak pahunch gaya hai, hum jald hi aapse baat karenge.`
+            );
+
+            // Aapke number (8005844014) par complete details forward karein
+            const leadAlert = `✅ *Nayi Contact Details Mil Gayi!*\n\n👤 *Naam:* ${userName}\n📱 *Phone:* +${senderPhone}\n💬 *First Message:* ${userStates[userKey].firstMsg}\n⏰ *Time:* ${timeString}`;
+            await sendMessage(sessionId, TARGET_PHONE, leadAlert);
+            console.log(`🚀 Details sent to ${TARGET_PHONE}`);
+          }
+          // State 3: User pehle se registered hai aur aage ka message bhej raha hai
+          else if (userStates[userKey].stage === 'registered') {
+            const userName = userStates[userKey].name || pushName || senderPhone;
+            const followUpAlert = `💬 *Message from ${userName}* (+${senderPhone}):\n${text}`;
+            await sendMessage(sessionId, TARGET_PHONE, followUpAlert);
+            console.log(`🚀 Follow-up message from ${userName} forwarded to ${TARGET_PHONE}`);
+          }
         }
       } catch (err) {
-        console.error('⚠️ Error processing message:', err.message);
+        console.error('⚠️ Error processing webhook event:', err.message);
       }
     });
   } else {
@@ -73,7 +133,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-async function sendDirectMessage(sessionId, messageText) {
+async function sendMessage(sessionId, chatId, messageText) {
   let activeSessionId = sessionId;
   if (!activeSessionId || activeSessionId === 'default') {
     try {
@@ -98,27 +158,24 @@ async function sendDirectMessage(sessionId, messageText) {
         'X-Api-Key': OPENWA_API_KEY,
       },
       body: JSON.stringify({
-        chatId: TARGET_PHONE,
-        text: messageText, // Same to same direct text
+        chatId: chatId,
+        text: messageText,
       }),
     });
 
-    if (response.ok) {
-      console.log(`✅ Same to same message sent successfully to ${TARGET_PHONE}`);
-    } else {
+    if (!response.ok) {
       const err = await response.text();
-      console.error(`❌ Send failed:`, err);
+      console.error(`❌ Send failed to ${chatId}:`, err);
     }
   } catch (err) {
-    console.error(`❌ Network error:`, err.message);
+    console.error(`❌ Network error sending to ${chatId}:`, err.message);
   }
 }
 
 server.listen(PORT, () => {
   console.log(`\n======================================================`);
-  console.log(`🚀 OpenWA Same-to-Same Forwarder Active on port ${PORT}`);
-  console.log(`📥 Source Phone:      9785060088 (Sirf iske messages)`);
-  console.log(`📤 Destination Phone: 8005844014 (Same to Same Receive hoga)`);
-  console.log(`⚡ Mode:              EXACT SAME-TO-SAME COPY`);
+  console.log(`🤖 OpenWA Smart Name-Capture & Lead Bot is ACTIVE`);
+  console.log(`📍 Webhook:           http://localhost:${PORT}/webhook`);
+  console.log(`📤 Destination Phone: ${TARGET_PHONE}`);
   console.log(`======================================================\n`);
 });
