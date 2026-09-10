@@ -1,17 +1,17 @@
 /**
  * OpenWA Exact 1-to-1 Chat Forwarder
- * Source Number (9785260088) se aane wale kisi bhi message ko
- * Destination Number (7428778282) par exact "SAME TO SAME" direct send karega.
+ * Source Number (9785060088) se aane wale kisi bhi message ko
+ * Destination Number (8005844014) par exact "SAME TO SAME" direct send karega.
  */
 
 const http = require('http');
 
 // ==================== CONFIGURATION ====================
 // 1. Source Phone (Jiske messages forward karne hain)
-const SOURCE_PHONE = '9785260088'; // 9785260088
+const SOURCE_PHONE = '9785060088'; // 9785060088
 
 // 2. Destination Phone (Jahan exact same message send karna hai)
-const TARGET_PHONE = '917428778282@c.us'; // 7428778282
+const TARGET_PHONE = '918005844014@c.us'; // 8005844014
 
 // 3. OpenWA Server settings
 const OPENWA_API_URL = 'http://localhost:2785';
@@ -43,12 +43,12 @@ const server = http.createServer(async (req, res) => {
           const text = payload.body || payload.text || payload.caption || '';
           const isFromMe = payload.fromMe === true;
 
-          // Apne khud ke messages ya destination number ke loop ko ignore karein
-          if (isFromMe || from.includes('7428778282') || !text) {
+          // Apne khud ke messages ko ignore karein
+          if (isFromMe || !text) {
             return;
           }
 
-          // Check if message is from the specific SOURCE_PHONE (9785260088)
+          // Check if message is from the specific SOURCE_PHONE (9785060088)
           const isFromSource = from.includes(SOURCE_PHONE) || senderPhone.includes(SOURCE_PHONE);
 
           if (!isFromSource) {
@@ -56,8 +56,8 @@ const server = http.createServer(async (req, res) => {
           }
 
           console.log(`\n========================================`);
-          console.log(`📩 Message from 9785260088: "${text}"`);
-          console.log(`🚀 Sending same to same to 7428778282...`);
+          console.log(`📩 Message from 9785060088: "${text}"`);
+          console.log(`🚀 Sending same to same to ${TARGET_PHONE}...`);
           console.log(`========================================`);
 
           // Exact same to same message text bina kisi extra detail ke forward karein
@@ -117,8 +117,8 @@ async function sendDirectMessage(sessionId, messageText) {
 server.listen(PORT, () => {
   console.log(`\n======================================================`);
   console.log(`🚀 OpenWA Same-to-Same Forwarder Active on port ${PORT}`);
-  console.log(`📥 Source Phone:      9785260088 (Sirf iske messages)`);
-  console.log(`📤 Destination Phone: 7428778282 (Same to Same Receive hoga)`);
+  console.log(`📥 Source Phone:      9785060088 (Sirf iske messages)`);
+  console.log(`📤 Destination Phone: 8005844014 (Same to Same Receive hoga)`);
   console.log(`⚡ Mode:              EXACT SAME-TO-SAME COPY`);
   console.log(`======================================================\n`);
 });
