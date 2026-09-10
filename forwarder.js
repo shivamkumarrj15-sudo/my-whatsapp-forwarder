@@ -1,7 +1,7 @@
 /**
  * OpenWA Exact 1-to-1 Chat Forwarder
  * Source Number (9785260088) se aane wale kisi bhi message ko
- * Destination Number (7619347098) par exact "SAME TO SAME" direct send karega.
+ * Destination Number (7428778282) par exact "SAME TO SAME" direct send karega.
  */
 
 const http = require('http');
@@ -11,7 +11,7 @@ const http = require('http');
 const SOURCE_PHONE = '9785260088'; // 9785260088
 
 // 2. Destination Phone (Jahan exact same message send karna hai)
-const TARGET_PHONE = '917619347098@c.us'; // 7619347098
+const TARGET_PHONE = '917428778282@c.us'; // 7428778282
 
 // 3. OpenWA Server settings
 const OPENWA_API_URL = 'http://localhost:2785';
@@ -44,7 +44,7 @@ const server = http.createServer(async (req, res) => {
           const isFromMe = payload.fromMe === true;
 
           // Apne khud ke messages ya destination number ke loop ko ignore karein
-          if (isFromMe || from.includes('7619347098') || !text) {
+          if (isFromMe || from.includes('7428778282') || !text) {
             return;
           }
 
@@ -57,7 +57,7 @@ const server = http.createServer(async (req, res) => {
 
           console.log(`\n========================================`);
           console.log(`📩 Message from 9785260088: "${text}"`);
-          console.log(`🚀 Sending same to same to 7619347098...`);
+          console.log(`🚀 Sending same to same to 7428778282...`);
           console.log(`========================================`);
 
           // Exact same to same message text bina kisi extra detail ke forward karein
@@ -118,7 +118,7 @@ server.listen(PORT, () => {
   console.log(`\n======================================================`);
   console.log(`🚀 OpenWA Same-to-Same Forwarder Active on port ${PORT}`);
   console.log(`📥 Source Phone:      9785260088 (Sirf iske messages)`);
-  console.log(`📤 Destination Phone: 7619347098 (Same to Same Receive hoga)`);
+  console.log(`📤 Destination Phone: 7428778282 (Same to Same Receive hoga)`);
   console.log(`⚡ Mode:              EXACT SAME-TO-SAME COPY`);
   console.log(`======================================================\n`);
 });
