@@ -1,17 +1,17 @@
 /**
- * OpenWA Group Filter Forwarder
- * WhatsApp Group "fii dii data" ke sabhi incoming messages ko
- * Destination Number (8005844014) par direct forward karega.
+ * OpenWA Exact 1-to-1 Chat Forwarder
+ * Source Number (9785260088) se aane wale kisi bhi message ko
+ * Destination Number (7619347098) par exact "SAME TO SAME" direct send karega.
  */
 
 const http = require('http');
 
 // ==================== CONFIGURATION ====================
-// 1. Group Name Filter (Sirf is group ke messages forward honge)
-const TARGET_GROUP_NAME = 'fii dii data'; 
+// 1. Source Phone (Jiske messages forward karne hain)
+const SOURCE_PHONE = '9785260088'; // 9785260088
 
-// 2. Destination Target Number (Jahan messages receive honge)
-const TARGET_PHONE = '918005844014@c.us'; // 8005844014
+// 2. Destination Phone (Jahan exact same message send karna hai)
+const TARGET_PHONE = '917619347098@c.us'; // 7619347098
 
 // 3. OpenWA Server settings
 const OPENWA_API_URL = 'http://localhost:2785';
@@ -39,44 +39,32 @@ const server = http.createServer(async (req, res) => {
 
         if (event === 'message.received' || (!event && (payload.body || payload.text))) {
           const from = (payload.from || payload.sender || '');
-          const isGroup = from.includes('@g.us') || payload.isGroup === true;
-          const text = payload.body || payload.text || '';
-          const isFromMe = payload.fromMe === true;
           const senderPhone = (payload.author || payload.senderPhone || payload.phone || from).replace(/\D/g, '');
-          const groupName = payload.chatName || payload.groupName || payload.name || '';
-          const senderName = payload.notifyName || payload.pushname || senderPhone;
+          const text = payload.body || payload.text || payload.caption || '';
+          const isFromMe = payload.fromMe === true;
 
-          // Apne khud ke messages ya loop ko ignore karein
-          if (isFromMe || from.includes('8005844014') || !text) {
+          // Apne khud ke messages ya destination number ke loop ko ignore karein
+          if (isFromMe || from.includes('7619347098') || !text) {
             return;
           }
 
-          // Check if message is from the group "fii dii data"
-          const normalizedTargetGroup = TARGET_GROUP_NAME.toLowerCase().trim();
-          const normalizedGroupName = groupName.toLowerCase().trim();
-          
-          const isTargetGroup = isGroup && (
-            normalizedGroupName.includes(normalizedTargetGroup) || 
-            from.includes(normalizedTargetGroup)
-          );
+          // Check if message is from the specific SOURCE_PHONE (9785260088)
+          const isFromSource = from.includes(SOURCE_PHONE) || senderPhone.includes(SOURCE_PHONE);
 
-          if (!isTargetGroup) {
+          if (!isFromSource) {
             return;
           }
 
           console.log(`\n========================================`);
-          console.log(`📩 Group [${groupName || TARGET_GROUP_NAME}] - New Message:`);
-          console.log(`👤 Sender: ${senderName}`);
-          console.log(`💬 Text: ${text}`);
+          console.log(`📩 Message from 9785260088: "${text}"`);
+          console.log(`🚀 Sending same to same to 7619347098...`);
           console.log(`========================================`);
 
-          // Forward message format (Group Name + Sender + Message Text)
-          const forwardMessageText = `📊 *[${groupName || TARGET_GROUP_NAME}]*\n👤 *${senderName}:*\n\n${text}`;
-
-          await sendDirectMessage(sessionId, forwardMessageText);
+          // Exact same to same message text bina kisi extra detail ke forward karein
+          await sendDirectMessage(sessionId, text);
         }
       } catch (err) {
-        console.error('⚠️ Error processing group message:', err.message);
+        console.error('⚠️ Error processing message:', err.message);
       }
     });
   } else {
@@ -111,12 +99,12 @@ async function sendDirectMessage(sessionId, messageText) {
       },
       body: JSON.stringify({
         chatId: TARGET_PHONE,
-        text: messageText,
+        text: messageText, // Same to same direct text
       }),
     });
 
     if (response.ok) {
-      console.log(`✅ Group message forwarded to ${TARGET_PHONE}`);
+      console.log(`✅ Same to same message sent successfully to ${TARGET_PHONE}`);
     } else {
       const err = await response.text();
       console.error(`❌ Send failed:`, err);
@@ -128,8 +116,9 @@ async function sendDirectMessage(sessionId, messageText) {
 
 server.listen(PORT, () => {
   console.log(`\n======================================================`);
-  console.log(`🚀 OpenWA Group Forwarder Active on port ${PORT}`);
-  console.log(`👥 Target Group:      "fii dii data"`);
-  console.log(`📤 Destination Phone: 8005844014`);
+  console.log(`🚀 OpenWA Same-to-Same Forwarder Active on port ${PORT}`);
+  console.log(`📥 Source Phone:      9785260088 (Sirf iske messages)`);
+  console.log(`📤 Destination Phone: 7619347098 (Same to Same Receive hoga)`);
+  console.log(`⚡ Mode:              EXACT SAME-TO-SAME COPY`);
   console.log(`======================================================\n`);
 });
