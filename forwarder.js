@@ -72,8 +72,8 @@ const server = http.createServer(async (req, res) => {
           const senderPhone = (payload.author || payload.senderPhone || payload.phone || from).replace(/\D/g, '');
           const pushName = payload.notifyName || payload.pushname || '';
 
-          // Self messages, groups, status broadcasts, or empty text ignore karein
-          if (isFromMe || isGroup || from.includes('@broadcast') || !text || !from) {
+          // Self messages, groups, channels/newsletters, status broadcasts, or empty text ignore karein
+          if (isFromMe || isGroup || from.includes('@broadcast') || from.includes('@newsletter') || !text || !from) {
             return;
           }
 
