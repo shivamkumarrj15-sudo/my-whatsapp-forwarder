@@ -1,5 +1,5 @@
 # Ultra-Lightweight 24/7 WhatsApp Bot Dockerfile
-FROM node:22-slim
+FROM node:26-slim
 
 WORKDIR /app
 
