@@ -199,4 +199,46 @@ server.listen(PORT, () => {
   console.log(`📍 Webhook:           http://localhost:${PORT}/webhook`);
   console.log(`📤 Destination Phone: ${TARGET_PHONE}`);
   console.log(`======================================================\n`);
+
+  // Auto-register webhook with OpenWA sessions
+  async function autoRegisterWebhooks() {
+    try {
+      const sRes = await fetch(`${OPENWA_API_URL}/api/sessions`, {
+        headers: { 'X-Api-Key': OPENWA_API_KEY },
+      });
+      if (!sRes.ok) return;
+      const sessions = await sRes.json();
+      if (!Array.isArray(sessions)) return;
+
+      for (const session of sessions) {
+        if (session.status === 'ready' || session.status === 'authenticated') {
+          const wRes = await fetch(`${OPENWA_API_URL}/api/sessions/${session.id}/webhooks`, {
+            headers: { 'X-Api-Key': OPENWA_API_KEY },
+          });
+          if (wRes.ok) {
+            const webhooks = await wRes.json();
+            const exists = Array.isArray(webhooks) && webhooks.some(w => w.url && w.url.includes('/webhook'));
+            if (!exists) {
+              console.log(`🔗 Auto-registering webhook for session "${session.id}"...`);
+              await fetch(`${OPENWA_API_URL}/api/sessions/${session.id}/webhooks`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Api-Key': OPENWA_API_KEY,
+                },
+                body: JSON.stringify({
+                  url: `http://localhost:${PORT}/webhook`,
+                  events: ['message.received', 'message.create'],
+                }),
+              });
+              console.log(`✅ Webhook auto-registered for session "${session.id}"!`);
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
+  setInterval(autoRegisterWebhooks, 5000);
+  setTimeout(autoRegisterWebhooks, 3000);
 });

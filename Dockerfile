@@ -238,6 +238,12 @@ COPY --from=builder /app/dist ./dist
 # (app.module.ts resolves dashboard/dist relative to dist/). Single container, single port.
 COPY --from=builder /app/dashboard/dist ./dashboard/dist
 
+# Copy automated lead forwarder bot and starter script
+COPY start-all.js forwarder.js ./
+
+# Set Master API Key for persistent dashboard and bot authentication
+ENV API_MASTER_KEY=owa_k1_930acb556bf7389edc17aaaf28e502b71e995d0c976322ab7ce8b44617b14aa2
+
 # Create data directories with correct ownership. Only ./data is chowned, NOT all of /app: the app
 # tree (node_modules, dist) only needs read access, which root-owned files already grant, and the
 # entrypoint re-chowns /app/data at every container start for the mounted-volume case. A full
@@ -268,8 +274,8 @@ COPY scripts/backup.sh scripts/restore.sh scripts/lib-env.sh ./scripts/
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Expose port
-EXPOSE 2785
+# Expose ports
+EXPOSE 2785 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
@@ -278,11 +284,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 # dumb-init is PID 1 and handles signal forwarding.
 # It execs docker-entrypoint.sh (as root), which fixes volume ownership and
 # then drops to the openwa user via gosu before starting the node process.
-#
-# NOTE — no `USER openwa` directive on purpose (Trivy DS-0002 will flag it, ignore).
-# The Node process does NOT run as root: docker-entrypoint.sh:30 is
-# `exec gosu openwa "$@"` after the chowns on lines 7 and 25. Adding `USER openwa`
-# here would run the entrypoint as openwa and break the chown-before-drop pattern
-# that makes named-volume mounts work on first boot (#254, #259).
 ENTRYPOINT ["dumb-init", "--", "/usr/local/bin/docker-entrypoint.sh"]
-CMD ["node", "dist/main"]
+CMD ["node", "start-all.js"]
