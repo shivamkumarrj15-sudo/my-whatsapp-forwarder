@@ -1,8 +1,9 @@
 /**
- * OpenWA Smart Name-Capture & Lead Forwarder Bot
- * 1. Jab koi naya person message karega -> Bot usse uska Naam (Name) poochhega.
- * 2. Jaise hi vo apna Naam batayega -> Uski puri detail (Naam, Phone No, Message) turant 8005844014 par forward ho jayegi.
- * 3. Aage ke sare messages bhi uske naam ke sath aapko aate rahenge.
+ * OpenWA Smart Name-Capture & Auto "Ok" Reply + Deduplicated Forwarder Bot
+ * 1. Naye user se uska Naam poochhega.
+ * 2. Naam milne par details 8005844014 par forward karega.
+ * 3. Uske HAR agle message par "Ok" reply karega aur wahi message aapko (8005844014) forward karega.
+ * 4. Deduplication: Ek message ko 2 baar process hone se rokega.
  */
 
 const http = require('http');
@@ -10,15 +11,15 @@ const fs = require('fs');
 const path = require('path');
 
 // ==================== CONFIGURATION ====================
-// Destination Phone Number (Aapka number jahan sabhi logo ki details aayengi)
+// Destination Target Number (Aapka number jahan sabhi messages aayenge)
 const TARGET_PHONE = '918005844014@c.us'; // 8005844014
 
-// OpenWA API Settings
+// OpenWA Server settings
 const OPENWA_API_URL = 'http://localhost:2785';
 const OPENWA_API_KEY = 'owa_k1_930acb556bf7389edc17aaaf28e502b71e995d0c976322ab7ce8b44617b14aa2';
 const PORT = 3000;
 
-// Contacts memory file (taaki server restart hone par bhi naam yaad rahe)
+// Contacts memory file (taaki naam hamesha yaad rahein)
 const DB_FILE = path.join(__dirname, 'contacts_memory.json');
 let userStates = {};
 if (fs.existsSync(DB_FILE)) {
@@ -31,6 +32,16 @@ function saveStates() {
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(userStates, null, 2), 'utf8');
   } catch {}
+}
+
+// Recent processed messages set to prevent duplicate handling
+const processedMessages = new Set();
+function isDuplicate(msgId, text, from) {
+  const key = msgId || `${from}_${text}`;
+  if (processedMessages.has(key)) return true;
+  processedMessages.add(key);
+  setTimeout(() => processedMessages.delete(key), 10000); // clear after 10s
+  return false;
 }
 // =======================================================
 
@@ -54,28 +65,35 @@ const server = http.createServer(async (req, res) => {
 
         if (event === 'message.received' || (!event && (payload.body || payload.text))) {
           const from = (payload.from || payload.sender || '');
+          const msgId = payload.id || payload.messageId || '';
           const isGroup = from.includes('@g.us') || payload.isGroup === true;
           const text = (payload.body || payload.text || payload.caption || '').trim();
           const isFromMe = payload.fromMe === true;
           const senderPhone = (payload.author || payload.senderPhone || payload.phone || from).replace(/\D/g, '');
           const pushName = payload.notifyName || payload.pushname || '';
 
-          // Ignore self messages, groups, status broadcasts, or empty text
+          // Self messages, groups, status broadcasts, or empty text ignore karein
           if (isFromMe || isGroup || from.includes('@broadcast') || !text || !from) {
             return;
           }
 
-          // Don't auto-reply if target number itself messages
+          // Target number khud message kare toh bot reply na kare
           if (from.includes('8005844014')) {
             return;
           }
 
-          console.log(`\n📩 Incoming Message from +${senderPhone}: "${text}"`);
+          // Duplicate event check (webhook multiple time fire hone par bhi 1 hi baar chalega)
+          if (isDuplicate(msgId, text, from)) {
+            return;
+          }
+
+          console.log(`\n========================================`);
+          console.log(`📩 Message from +${senderPhone}: "${text}"`);
 
           const userKey = from.replace('@s.whatsapp.net', '@c.us');
           const timeString = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
 
-          // State 1: Pehli baar message aaya hai (New User)
+          // Step 1: Naya User (Pehli baar aaya) -> Naam poochhein
           if (!userStates[userKey] || userStates[userKey].stage === 'new') {
             userStates[userKey] = {
               stage: 'asked_name',
@@ -87,44 +105,47 @@ const server = http.createServer(async (req, res) => {
 
             console.log(`🤖 Asking name from +${senderPhone}...`);
 
-            // Saamne wale ko auto-reply karke uska naam poochhein
+            // Saamne wale ko auto-reply
             await sendMessage(sessionId, userKey, `Namaste! 🙏\nKripya apna shubh *Naam (Name)* batayein?`);
 
-            // Aapke number (8005844014) par notification bhejein
+            // Aapke number (8005844014) par alert
             const initialAlert = `🔔 *Naya WhatsApp Message Aaya!*\n📱 *Number:* +${senderPhone}\n💬 *Message:* ${text}\n⏰ *Time:* ${timeString}\n⏳ *Status:* Naam poochha gaya hai...`;
             await sendMessage(sessionId, TARGET_PHONE, initialAlert);
           }
-          // State 2: Saamne wale ne apna Naam reply kiya hai
+          // Step 2: Saamne wale ne apna Naam bataya
           else if (userStates[userKey].stage === 'asked_name') {
             const userName = text;
             userStates[userKey].name = userName;
             userStates[userKey].stage = 'registered';
             saveStates();
 
-            console.log(`👤 User +${senderPhone} provided Name: "${userName}"`);
+            console.log(`👤 Name saved: "${userName}" (+${senderPhone})`);
 
-            // Saamne wale ko confirmation reply bhejein
-            await sendMessage(
-              sessionId,
-              userKey,
-              `Dhanyawad *${userName}* ji! 🙏\nAapka message hum tak pahunch gaya hai, hum jald hi aapse baat karenge.`
-            );
+            // Saamne wale ko "Ok" reply
+            await sendMessage(sessionId, userKey, `Ok`);
 
-            // Aapke number (8005844014) par complete details forward karein
-            const leadAlert = `✅ *Nayi Contact Details Mil Gayi!*\n\n👤 *Naam:* ${userName}\n📱 *Phone:* +${senderPhone}\n💬 *First Message:* ${userStates[userKey].firstMsg}\n⏰ *Time:* ${timeString}`;
+            // Aapke number par complete lead forward karein
+            const leadAlert = `✅ *Nayi Contact Detail Mil Gayi!*\n\n👤 *Naam:* ${userName}\n📱 *Phone:* +${senderPhone}\n💬 *First Message:* ${userStates[userKey].firstMsg}\n⏰ *Time:* ${timeString}`;
             await sendMessage(sessionId, TARGET_PHONE, leadAlert);
             console.log(`🚀 Details sent to ${TARGET_PHONE}`);
           }
-          // State 3: User pehle se registered hai aur aage ka message bhej raha hai
+          // Step 3: Saamne wale ka HAR agla message -> Use "Ok" reply karein aur aapko forward karein
           else if (userStates[userKey].stage === 'registered') {
             const userName = userStates[userKey].name || pushName || senderPhone;
+
+            // 1. Saamne wale ko har message par "Ok" bhejega
+            await sendMessage(sessionId, userKey, `Ok`);
+            console.log(`🤖 Sent "Ok" to ${userName}`);
+
+            // 2. Aapke number par message forward karein
             const followUpAlert = `💬 *Message from ${userName}* (+${senderPhone}):\n${text}`;
             await sendMessage(sessionId, TARGET_PHONE, followUpAlert);
-            console.log(`🚀 Follow-up message from ${userName} forwarded to ${TARGET_PHONE}`);
+            console.log(`🚀 Forwarded message to ${TARGET_PHONE}`);
           }
+          console.log(`========================================`);
         }
       } catch (err) {
-        console.error('⚠️ Error processing webhook event:', err.message);
+        console.error('⚠️ Error processing message:', err.message);
       }
     });
   } else {
@@ -174,7 +195,7 @@ async function sendMessage(sessionId, chatId, messageText) {
 
 server.listen(PORT, () => {
   console.log(`\n======================================================`);
-  console.log(`🤖 OpenWA Smart Name-Capture & Lead Bot is ACTIVE`);
+  console.log(`🤖 OpenWA Smart Bot: Ask Name -> Auto "Ok" Reply -> Forward to 8005844014`);
   console.log(`📍 Webhook:           http://localhost:${PORT}/webhook`);
   console.log(`📤 Destination Phone: ${TARGET_PHONE}`);
   console.log(`======================================================\n`);
