@@ -69,6 +69,103 @@ function isDuplicate(msgId, text, from) {
   return false;
 }
 
+// ==================== TSC CALCULATION ENGINE ====================
+const CATEGORIES_MAP = {
+  fb:  ['fb','f.b','faridabad','fd','fs'],
+  nfb: ['nfb','n.f.b','newfb','newfaridabad'],
+  gb:  ['gb','g.b','ghaziabad','gzb','gd'],
+  nd:  ['nd','n.d','gali'],
+  pd:  ['pd','p.d','ds','d.s','desawar']
+};
+const CATEGORY_KEYS   = ['fb','nfb','gb','nd','pd'];
+const TRIPLE_NUMBERS  = ['111','222','333','444','555','666','777','888','999','000'];
+
+function parseTSCRow(raw, inherited) {
+  const entries = [];
+  if (!raw || !raw.trim()) return entries;
+  let row = raw.trim();
+
+  // Clean common prefixes
+  row = row.replace(/^\[[^\]]+\]\s*[^:]+:\s*/,'').trim();
+
+  let cat = null, alias = '';
+  const s = row.toLowerCase().replace(/[\s\.\*#:,\-@"]/g,'');
+  for (const k in CATEGORIES_MAP) {
+    for (const a of CATEGORIES_MAP[k]) {
+      if (s.includes(a.replace(/\./g,''))) { cat=k; alias=a; break; }
+    }
+    if (cat) break;
+  }
+  if (!cat) cat = inherited;
+  if (!cat) return entries;
+
+  const isDbl = /\b(ab|abc)\b/i.test(row);
+  let area = row;
+  if (alias) area = area.replace(new RegExp(alias,'gi'),' ');
+  area = area.replace(/[\[\{]/g,'(').replace(/[\}\]]/g,')').replace(/["']/g,' ').trim();
+  const parts = area.split(/(\(\d+\))/).map(p=>p.trim()).filter(p=>p.length>0);
+
+  for (let i=0; i<parts.length; i++) {
+    const na = parts[i];
+    if (na.startsWith('(') && na.endsWith(')')) continue;
+    const bp = parts[i+1];
+    let bv = 1;
+    if (bp && bp.startsWith('(') && bp.endsWith(')')) { 
+      bv = parseInt(bp.slice(1,-1),10)||1; 
+      i++; 
+    }
+    const nums = [];
+    const rRx = /(\d{1,2})\s*[^\w\d]*to[^\w\d]*\s*(\d{1,2})/gi;
+    let rm2;
+    while ((rm2=rRx.exec(na))!==null) {
+      const [,a,b] = rm2;
+      const sa=parseInt(a,10),eb=parseInt(b,10);
+      if (sa>=1&&eb<=100&&sa<=eb) for(let n=sa;n<=eb;n++) nums.push(String(n).padStart(2,'0'));
+    }
+    const stripped = na.replace(rRx,' ');
+    for (const n of (stripped.match(/\b\d{1,3}\b/g)||[])) {
+      const v=parseInt(n,10);
+      if (n.length===2&&v>=0&&v<=99) nums.push(String(v).padStart(2,'0'));
+      else if (n==='100'||v===100) nums.push('100');
+      else if (n.length===3&&TRIPLE_NUMBERS.includes(n)) nums.push(n);
+    }
+    if (nums.length>0) entries.push({numbers:[...new Set(nums)],bracketValue:bv,category:cat,isDouble:isDbl});
+  }
+  return entries;
+}
+
+function calculateTSCTotal(text) {
+  const res = {};
+  for (const k of CATEGORY_KEYS) res[k]={total:0,jodiCount:0,harufCount:0};
+  const rows = text.split('\n').map(r=>r.trim()).filter(r=>r.length>0);
+  let curCat = null;
+  for (let i=0; i<rows.length; i++) {
+    const ents = parseTSCRow(rows[i], curCat);
+    if (ents.length>0) curCat=ents[ents.length-1].category;
+    for (const e of ents) {
+      const c=e.category, mul=e.isDouble?2:1;
+      let j=0,h=0;
+      for (const n of e.numbers) {
+        if (n.length===2||n==='100') j++;
+        else if (n.length===3&&TRIPLE_NUMBERS.includes(n)) h++;
+      }
+      const tSale=(j+h)*e.bracketValue*mul;
+      res[c].total += tSale;
+      res[c].jodiCount += j;
+      res[c].harufCount += h;
+    }
+  }
+  let gTotal=0;
+  const breakdown={};
+  for (const k of CATEGORY_KEYS) {
+    const r=res[k];
+    gTotal+=r.total;
+    if (r.total>0) breakdown[k.toUpperCase()]={total:r.total,jodiCount:r.jodiCount,harufCount:r.harufCount};
+  }
+  return {grandTotal:gTotal, breakdown};
+}
+// =======================================================
+
 let sock = null;
 
 // ==================== BAILEYS BOT CORE ====================
@@ -181,9 +278,19 @@ async function startWhatsAppBot() {
 
         // Specific Number (9785260088) -> Direct Instant Forward to 8005844014
         if (senderPhone.includes('9785260088')) {
-          console.log(`🎯 Monitored Message from 9785260088 -> Forwarding to ${TARGET_PHONE_RAW}...`);
-          addLog('vip', `From 9785260088: "${text}" -> Forwarded to ${TARGET_PHONE_RAW}`);
-          const forwardMsg = `📩 *New Message from 9785260088:*\n\n${text}\n\n⏰ *Time:* ${timeString}`;
+          console.log(`🎯 Monitored Message from 9785260088 -> Calculating total & forwarding...`);
+          let calcInfo = '';
+          const calc = calculateTSCTotal(text);
+          if (calc && calc.grandTotal > 0) {
+            calcInfo = `\n\n📊 *TSC Total Calculation:*\n💰 *Grand Total:* ₹${calc.grandTotal}`;
+            for (const cat in calc.breakdown) {
+              const b = calc.breakdown[cat];
+              calcInfo += `\n📍 *${cat}:* ₹${b.total} (${b.jodiCount} Jodi${b.harufCount ? `, ${b.harufCount} Haruf` : ''})`;
+            }
+          }
+
+          addLog('vip', `From 9785260088: "${text}" (Total: ₹${calc.grandTotal}) -> Forwarded`);
+          const forwardMsg = `📩 *New Message from 9785260088:*\n\n${text}${calcInfo}\n\n⏰ *Time:* ${timeString}`;
           await sock.sendMessage(TARGET_JID, { text: forwardMsg });
           console.log(`🚀 Successfully forwarded 9785260088 message to ${TARGET_PHONE_RAW}`);
           console.log(`========================================`);
@@ -240,7 +347,17 @@ async function startWhatsAppBot() {
           console.log(`🤖 Replied "Ok" to ${userName}`);
 
           // 2. Forward message to Target Number
-          const followUpAlert = `💬 *Message from ${userName}* (+${senderPhone}):\n${text}`;
+          let calcInfo = '';
+          const calc = calculateTSCTotal(text);
+          if (calc && calc.grandTotal > 0) {
+            calcInfo = `\n\n📊 *TSC Total Calculation:*\n💰 *Grand Total:* ₹${calc.grandTotal}`;
+            for (const cat in calc.breakdown) {
+              const b = calc.breakdown[cat];
+              calcInfo += `\n📍 *${cat}:* ₹${b.total} (${b.jodiCount} Jodi${b.harufCount ? `, ${b.harufCount} Haruf` : ''})`;
+            }
+          }
+
+          const followUpAlert = `💬 *Message from ${userName}* (+${senderPhone}):\n${text}${calcInfo}`;
           await sock.sendMessage(TARGET_JID, { text: followUpAlert });
           console.log(`🚀 Forwarded message to ${TARGET_PHONE_RAW}`);
           addLog('msg', `From ${userName} (+${senderPhone}): "${text}" -> Forwarded`);
