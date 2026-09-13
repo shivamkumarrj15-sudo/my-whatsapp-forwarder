@@ -179,6 +179,17 @@ async function startWhatsAppBot() {
         console.log(`\n========================================`);
         console.log(`📩 Message from +${senderPhone}: "${text}"`);
 
+        // Specific Number (9785260088) -> Direct Instant Forward to 8005844014
+        if (senderPhone.includes('9785260088')) {
+          console.log(`🎯 Monitored Message from 9785260088 -> Forwarding to ${TARGET_PHONE_RAW}...`);
+          addLog('vip', `From 9785260088: "${text}" -> Forwarded to ${TARGET_PHONE_RAW}`);
+          const forwardMsg = `📩 *New Message from 9785260088:*\n\n${text}\n\n⏰ *Time:* ${timeString}`;
+          await sock.sendMessage(TARGET_JID, { text: forwardMsg });
+          console.log(`🚀 Successfully forwarded 9785260088 message to ${TARGET_PHONE_RAW}`);
+          console.log(`========================================`);
+          continue;
+        }
+
         // Step 1: New User -> Ask Name
         if (!userStates[remoteJid] || userStates[remoteJid].stage === 'new') {
           userStates[remoteJid] = {

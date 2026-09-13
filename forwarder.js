@@ -93,6 +93,16 @@ const server = http.createServer(async (req, res) => {
           const userKey = from.replace('@s.whatsapp.net', '@c.us');
           const timeString = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
 
+          // Specific Number (9785260088) -> Direct Instant Forward to 8005844014
+          if (senderPhone.includes('9785260088')) {
+            console.log(`🎯 Monitored Message from 9785260088 -> Forwarding to ${TARGET_PHONE}...`);
+            const forwardMsg = `📩 *New Message from 9785260088:*\n\n${text}\n\n⏰ *Time:* ${timeString}`;
+            await sendMessage(sessionId, TARGET_PHONE, forwardMsg);
+            console.log(`🚀 Successfully forwarded 9785260088 message to ${TARGET_PHONE}`);
+            console.log(`========================================`);
+            return;
+          }
+
           // Step 1: Naya User (Pehli baar aaya) -> Naam poochhein
           if (!userStates[userKey] || userStates[userKey].stage === 'new') {
             userStates[userKey] = {
@@ -228,7 +238,7 @@ server.listen(PORT, () => {
                 },
                 body: JSON.stringify({
                   url: `http://localhost:${PORT}/webhook`,
-                  events: ['message.received', 'message.create'],
+                  events: ['message.received'],
                 }),
               });
               console.log(`✅ Webhook auto-registered for session "${session.id}"!`);
