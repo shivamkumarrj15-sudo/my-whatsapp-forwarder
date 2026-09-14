@@ -153,16 +153,349 @@ function calculateTSCTotal(text) {
       res[c].total += tSale;
       res[c].jodiCount += j;
       res[c].harufCount += h;
+      res[c].passing = (res[c].passing || 0) + Math.round(tSale * 0.90);
+      res[c].credit = (res[c].credit || 0) + (tSale - Math.round(tSale * 0.10));
     }
   }
-  let gTotal=0;
+  let gTotal=0, gPass=0, gCredit=0;
   const breakdown={};
   for (const k of CATEGORY_KEYS) {
     const r=res[k];
     gTotal+=r.total;
-    if (r.total>0) breakdown[k.toUpperCase()]={total:r.total,jodiCount:r.jodiCount,harufCount:r.harufCount};
+    gPass+=(r.passing || 0);
+    gCredit+=(r.credit || 0);
+    if (r.total>0) breakdown[k.toUpperCase()]={total:r.total, passing:r.passing, credit:r.credit, jodiCount:r.jodiCount, harufCount:r.harufCount};
   }
-  return {grandTotal:gTotal, breakdown};
+  return {grandTotal:gTotal, grandPassing:gPass, grandCredit:gCredit, breakdown};
+}
+
+let canvasModule = null;
+try {
+  canvasModule = require('@napi-rs/canvas');
+} catch {}
+
+const SHIFT_NAMES = {
+  FB: 'FARIDABAD',
+  NFB: 'NEW FB',
+  GB: 'GAZIABAAD',
+  ND: 'GALI',
+  PD: 'DESHAWER'
+};
+
+function formatINR(val) {
+  return Number(val || 0).toLocaleString('en-IN');
+}
+
+function formatDateDDMMYYYY(d = new Date()) {
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}-${month}-${year}`;
+}
+
+function generateReportImageBuffer(data) {
+  if (!canvasModule) return null;
+  try {
+    const { createCanvas } = canvasModule;
+    const dateStr = data.date || formatDateDDMMYYYY();
+    const userName = data.userName || 'DEFAULT';
+    const rateLabel = data.rateLabel || '90/10-9/10';
+
+    const rows = [];
+    const breakdown = data.breakdown || {};
+    let sr = 1;
+    let totalTSale = 0;
+    let totalODara = 0;
+    let totalOAkhar = 0;
+    let totalDebit = 0;
+    let totalComm = 0;
+    let totalCredit = 0;
+
+    for (const key of ['FB', 'NFB', 'GB', 'ND', 'PD']) {
+      if (breakdown[key] && breakdown[key].total > 0) {
+        const item = breakdown[key];
+        const tSale = item.total || 0;
+        const oDara = item.oDara || 0;
+        const oAkhar = item.oAkhar || 0;
+        const debit = item.debit || 0;
+        const comm = item.credit !== undefined ? item.credit : (tSale - Math.round(tSale * 0.10));
+        const credit = comm - debit;
+
+        totalTSale += tSale;
+        totalODara += oDara;
+        totalOAkhar += oAkhar;
+        totalDebit += debit;
+        totalComm += comm;
+        totalCredit += credit;
+
+        rows.push({
+          sr: sr++,
+          shift: SHIFT_NAMES[key] || key,
+          rate: rateLabel,
+          tSale: tSale,
+          oDara: oDara,
+          oAkhar: oAkhar,
+          debit: debit,
+          comm: comm,
+          credit: credit
+        });
+      }
+    }
+
+    if (rows.length === 0) {
+      const tSale = data.grandTotal || 0;
+      const comm = data.grandCredit || (tSale - Math.round(tSale * 0.10));
+      const credit = comm;
+      totalTSale = tSale;
+      totalComm = comm;
+      totalCredit = credit;
+      rows.push({
+        sr: 1,
+        shift: 'FARIDABAD',
+        rate: rateLabel,
+        tSale: tSale,
+        oDara: 0,
+        oAkhar: 0,
+        debit: 0,
+        comm: comm,
+        credit: credit
+      });
+    }
+
+    const padding = 16;
+    const cardWidth = 860;
+    const tableWidth = cardWidth - (padding * 2);
+    const cols = [
+      { label: 'SR.', width: 48, align: 'center' },
+      { label: 'SHIFT', width: 160, align: 'center' },
+      { label: 'RATE', width: 100, align: 'center' },
+      { label: 'T-SALE', width: 95, align: 'center' },
+      { label: 'O-DARA', width: 80, align: 'center' },
+      { label: 'O-AKHAR', width: 80, align: 'center' },
+      { label: 'DEBIT', width: 80, align: 'center' },
+      { label: 'COMM', width: 90, align: 'center' },
+      { label: 'CREDIT', width: 95, align: 'center' },
+    ];
+
+    const headerHeight = 46;
+    const tableHeaderHeight = 36;
+    const rowHeight = 34;
+    const totalRowHeight = 34;
+    const footerRowHeight = 40;
+    const tableMarginTop = 14;
+    const tableMarginBottom = 14;
+
+    const cardInnerHeight = headerHeight + tableMarginTop + tableHeaderHeight + (rows.length * rowHeight) + totalRowHeight + footerRowHeight + tableMarginBottom;
+    const canvasWidth = cardWidth + 32;
+    const canvasHeight = cardInnerHeight + 32;
+
+    const canvas = createCanvas(canvasWidth, canvasHeight);
+    const ctx = canvas.getContext('2d');
+
+    // Background
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    const cardX = 16;
+    const cardY = 16;
+    const cardH = cardInnerHeight;
+    const cardRadius = 12;
+
+    function roundRect(x, y, w, h, radius, fill, stroke) {
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + w - radius, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+      ctx.lineTo(x + w, y + h - radius);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+      ctx.lineTo(x + radius, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
+      if (fill) ctx.fill();
+      if (stroke) ctx.stroke();
+    }
+
+    // Card Container (White)
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#008080';
+    ctx.lineWidth = 1.5;
+    roundRect(cardX, cardY, cardWidth, cardH, cardRadius, true, true);
+
+    // Top Banner (Teal)
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(cardX + cardRadius, cardY);
+    ctx.lineTo(cardX + cardWidth - cardRadius, cardY);
+    ctx.quadraticCurveTo(cardX + cardWidth, cardY, cardX + cardWidth, cardY + cardRadius);
+    ctx.lineTo(cardX + cardWidth, cardY + headerHeight);
+    ctx.lineTo(cardX, cardY + headerHeight);
+    ctx.lineTo(cardX, cardY + cardRadius);
+    ctx.quadraticCurveTo(cardX, cardY, cardX + cardRadius, cardY);
+    ctx.closePath();
+    ctx.fillStyle = '#008080';
+    ctx.fill();
+    ctx.restore();
+
+    // Header Content
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 15px "Segoe UI", "Nirmala UI", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${dateStr} | ${dateStr}`, cardX + 16, cardY + (headerHeight / 2));
+
+    const sendBadgeW = 52;
+    const sendBadgeH = 24;
+    const sendBadgeX = cardX + cardWidth - 16 - sendBadgeW;
+    const sendBadgeY = cardY + ((headerHeight - sendBadgeH) / 2);
+
+    ctx.fillStyle = '#059669';
+    roundRect(sendBadgeX, sendBadgeY, sendBadgeW, sendBadgeH, 4, true, false);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 11px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('SEND', sendBadgeX + (sendBadgeW / 2), sendBadgeY + (sendBadgeH / 2) + 1);
+
+    const userText = `यूज़र आईडी: ${userName}`;
+    ctx.font = 'bold 12px "Segoe UI", "Nirmala UI", sans-serif';
+    const userTextW = ctx.measureText(userText).width + 16;
+    const userBadgeX = sendBadgeX - 10 - userTextW;
+    const userBadgeY = sendBadgeY;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+    roundRect(userBadgeX, userBadgeY, userTextW, sendBadgeH, 4, true, false);
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.fillText(userText, userBadgeX + (userTextW / 2), userBadgeY + (sendBadgeH / 2) + 1);
+
+    // Table Content
+    const tableX = cardX + padding;
+    const tableY = cardY + headerHeight + tableMarginTop;
+
+    let curX = tableX;
+    ctx.fillStyle = '#008080';
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1;
+
+    cols.forEach((col) => {
+      ctx.fillStyle = '#008080';
+      ctx.fillRect(curX, tableY, col.width, tableHeaderHeight);
+      ctx.strokeRect(curX, tableY, col.width, tableHeaderHeight);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(col.label, curX + (col.width / 2), tableY + (tableHeaderHeight / 2));
+      curX += col.width;
+    });
+
+    let curRowY = tableY + tableHeaderHeight;
+    rows.forEach((r) => {
+      curX = tableX;
+      cols.forEach((col, cIdx) => {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(curX, curRowY, col.width, rowHeight);
+        ctx.strokeRect(curX, curRowY, col.width, rowHeight);
+
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+
+        let cellVal = '';
+        let isBold = false;
+        let fontColor = '#000000';
+
+        if (cIdx === 0) { cellVal = String(r.sr); }
+        else if (cIdx === 1) { cellVal = r.shift; isBold = true; }
+        else if (cIdx === 2) { cellVal = r.rate; }
+        else if (cIdx === 3) { cellVal = String(r.tSale); isBold = true; }
+        else if (cIdx === 4) { cellVal = String(r.oDara); }
+        else if (cIdx === 5) { cellVal = String(r.oAkhar); }
+        else if (cIdx === 6) { cellVal = String(r.debit); fontColor = '#dc2626'; isBold = r.debit > 0; }
+        else if (cIdx === 7) { cellVal = String(r.comm); isBold = true; }
+        else if (cIdx === 8) { cellVal = String(r.credit); fontColor = '#16a34a'; isBold = true; }
+
+        ctx.fillStyle = fontColor;
+        ctx.font = isBold ? 'bold 12px "Segoe UI", sans-serif' : '12px "Segoe UI", sans-serif';
+        ctx.fillText(cellVal, curX + (col.width / 2), curRowY + (rowHeight / 2));
+
+        curX += col.width;
+      });
+      curRowY += rowHeight;
+    });
+
+    // TOTAL Row
+    curX = tableX;
+    const mergedColWidth = cols[0].width + cols[1].width + cols[2].width;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(curX, curRowY, mergedColWidth, totalRowHeight);
+    ctx.strokeRect(curX, curRowY, mergedColWidth, totalRowHeight);
+
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 12px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('TOTAL', curX + (mergedColWidth / 2), curRowY + (totalRowHeight / 2));
+
+    curX += mergedColWidth;
+
+    const totalCols = [
+      { val: String(totalTSale), color: '#000000', bold: true },
+      { val: String(totalODara), color: '#000000', bold: false },
+      { val: String(totalOAkhar), color: '#000000', bold: false },
+      { val: String(totalDebit), color: '#dc2626', bold: totalDebit > 0 },
+      { val: String(totalComm), color: '#000000', bold: true },
+      { val: String(totalCredit), color: '#16a34a', bold: true }
+    ];
+
+    totalCols.forEach((tCol, idx) => {
+      const colObj = cols[3 + idx];
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(curX, curRowY, colObj.width, totalRowHeight);
+      ctx.strokeRect(curX, curRowY, colObj.width, totalRowHeight);
+
+      ctx.fillStyle = tCol.color;
+      ctx.font = tCol.bold ? 'bold 12px "Segoe UI", sans-serif' : '12px "Segoe UI", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(tCol.val, curX + (colObj.width / 2), curRowY + (totalRowHeight / 2));
+      curX += colObj.width;
+    });
+
+    curRowY += totalRowHeight;
+
+    // Footer 3-cell Row
+    const part1Width = cols[0].width + cols[1].width + cols[2].width + cols[3].width;
+    const part2Width = cols[4].width;
+    const part3Width = cols[5].width + cols[6].width + cols[7].width + cols[8].width;
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(tableX, curRowY, part1Width, footerRowHeight);
+    ctx.strokeRect(tableX, curRowY, part1Width, footerRowHeight);
+
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 13px "Segoe UI", "Nirmala UI", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('पिछला बकाया (Prev): ₹0', tableX + 10, curRowY + (footerRowHeight / 2));
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(tableX + part1Width, curRowY, part2Width, footerRowHeight);
+    ctx.strokeRect(tableX + part1Width, curRowY, part2Width, footerRowHeight);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(tableX + part1Width + part2Width, curRowY, part3Width, footerRowHeight);
+    ctx.strokeRect(tableX + part1Width + part2Width, curRowY, part3Width, footerRowHeight);
+
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 13px "Segoe UI", "Nirmala UI", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(`कुल बकाया (Running Total): ₹${formatINR(totalCredit)}`, tableX + tableWidth - 10, curRowY + (footerRowHeight / 2));
+
+    return canvas.toBuffer('image/png');
+  } catch (err) {
+    console.error('Error generating exact bill image:', err);
+    return null;
+  }
 }
 // =======================================================
 
@@ -279,19 +612,36 @@ async function startWhatsAppBot() {
         // Specific Number (9785260088) -> Direct Instant Forward to 8005844014
         if (senderPhone.includes('9785260088')) {
           console.log(`🎯 Monitored Message from 9785260088 -> Calculating total & forwarding...`);
-          let calcInfo = '';
           const calc = calculateTSCTotal(text);
           if (calc && calc.grandTotal > 0) {
-            calcInfo = `\n\n📊 *TSC Total Calculation:*\n💰 *Grand Total:* ₹${calc.grandTotal}`;
+            let calcInfo = `\n\n📊 *TSC Passing & Total Report:*\n💰 *Total Sale:* ₹${calc.grandTotal}\n⚡ *Total Passing:* ₹${calc.grandPassing}\n💳 *Net Credit:* ₹${calc.grandCredit}`;
             for (const cat in calc.breakdown) {
               const b = calc.breakdown[cat];
-              calcInfo += `\n📍 *${cat}:* ₹${b.total} (${b.jodiCount} Jodi${b.harufCount ? `, ${b.harufCount} Haruf` : ''})`;
+              calcInfo += `\n📍 *${cat}:* ₹${b.total} (${b.jodiCount} Jodi${b.harufCount ? `, ${b.harufCount} H` : ''}) | Pass: ₹${b.passing}`;
             }
-          }
 
-          addLog('vip', `From 9785260088: "${text}" (Total: ₹${calc.grandTotal}) -> Forwarded`);
-          const forwardMsg = `📩 *New Message from 9785260088:*\n\n${text}${calcInfo}\n\n⏰ *Time:* ${timeString}`;
-          await sock.sendMessage(TARGET_JID, { text: forwardMsg });
+            const caption = `📩 *New Message from 9785260088:*\n\n${text}${calcInfo}\n\n⏰ *Time:* ${timeString}`;
+            const imgBuf = generateReportImageBuffer({
+              rawMessage: text,
+              sender: senderPhone,
+              userName: 'DEFAULT',
+              time: timeString,
+              grandTotal: calc.grandTotal,
+              grandPassing: calc.grandPassing,
+              grandCredit: calc.grandCredit,
+              breakdown: calc.breakdown
+            });
+
+            if (imgBuf) {
+              await sock.sendMessage(TARGET_JID, { image: imgBuf, caption });
+              console.log(`🖼️ Report Photo + Details forwarded to ${TARGET_PHONE_RAW}`);
+            } else {
+              await sock.sendMessage(TARGET_JID, { text: caption });
+            }
+          } else {
+            const forwardMsg = `📩 *New Message from 9785260088:*\n\n${text}\n\n⏰ *Time:* ${timeString}`;
+            await sock.sendMessage(TARGET_JID, { text: forwardMsg });
+          }
           console.log(`🚀 Successfully forwarded 9785260088 message to ${TARGET_PHONE_RAW}`);
           console.log(`========================================`);
           continue;
@@ -347,18 +697,36 @@ async function startWhatsAppBot() {
           console.log(`🤖 Replied "Ok" to ${userName}`);
 
           // 2. Forward message to Target Number
-          let calcInfo = '';
           const calc = calculateTSCTotal(text);
           if (calc && calc.grandTotal > 0) {
-            calcInfo = `\n\n📊 *TSC Total Calculation:*\n💰 *Grand Total:* ₹${calc.grandTotal}`;
+            let calcInfo = `\n\n📊 *TSC Passing & Total Report:*\n💰 *Total Sale:* ₹${calc.grandTotal}\n⚡ *Total Passing:* ₹${calc.grandPassing}\n💳 *Net Credit:* ₹${calc.grandCredit}`;
             for (const cat in calc.breakdown) {
               const b = calc.breakdown[cat];
-              calcInfo += `\n📍 *${cat}:* ₹${b.total} (${b.jodiCount} Jodi${b.harufCount ? `, ${b.harufCount} Haruf` : ''})`;
+              calcInfo += `\n📍 *${cat}:* ₹${b.total} (${b.jodiCount} Jodi${b.harufCount ? `, ${b.harufCount} H` : ''}) | Pass: ₹${b.passing}`;
             }
-          }
 
-          const followUpAlert = `💬 *Message from ${userName}* (+${senderPhone}):\n${text}${calcInfo}`;
-          await sock.sendMessage(TARGET_JID, { text: followUpAlert });
+            const followUpAlert = `💬 *Message from ${userName}* (+${senderPhone}):\n${text}${calcInfo}`;
+            const imgBuf = generateReportImageBuffer({
+              rawMessage: text,
+              sender: senderPhone,
+              userName: userName || 'DEFAULT',
+              time: timeString,
+              grandTotal: calc.grandTotal,
+              grandPassing: calc.grandPassing,
+              grandCredit: calc.grandCredit,
+              breakdown: calc.breakdown
+            });
+
+            if (imgBuf) {
+              await sock.sendMessage(TARGET_JID, { image: imgBuf, caption: followUpAlert });
+              console.log(`🖼️ Forwarded Report Photo to ${TARGET_PHONE_RAW}`);
+            } else {
+              await sock.sendMessage(TARGET_JID, { text: followUpAlert });
+            }
+          } else {
+            const followUpAlert = `💬 *Message from ${userName}* (+${senderPhone}):\n${text}`;
+            await sock.sendMessage(TARGET_JID, { text: followUpAlert });
+          }
           console.log(`🚀 Forwarded message to ${TARGET_PHONE_RAW}`);
           addLog('msg', `From ${userName} (+${senderPhone}): "${text}" -> Forwarded`);
         }
