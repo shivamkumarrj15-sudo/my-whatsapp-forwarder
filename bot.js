@@ -1,10 +1,10 @@
 /**
- * High-Performance Pure Baileys WhatsApp Bot & Web Dashboard
- * - Ultra lightweight (30MB RAM, zero Chromium/Puppeteer)
- * - Built-in Web UI with live auto-refreshing QR Code
- * - Smart Lead Capture: Asks name on first message, replies "Ok" to subsequent messages
+ * High-Performance Pure Baileys WhatsApp Bot & Web Dashboard with Live Passing & Group Result Monitor
+ * - Auto-joins & listens to Result Group (https://chat.whatsapp.com/KNDH9Jx7PjiLM3cSB1yaKt)
+ * - Captures Live Opening Numbers for FB, NFB, GB, ND, PD
+ * - Calculates Live Passing & Net Credit
+ * - Generates Exact HD Bill Photo Card matching user template
  * - Forwards all lead details & messages to +91 80058 44014
- * - UptimeRobot compatible (/api/health)
  */
 
 const {
@@ -26,6 +26,7 @@ const TARGET_JID = '918005844014@s.whatsapp.net';
 const PORT = process.env.PORT || 2785;
 const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
 const DB_FILE = path.join(__dirname, 'contacts_memory.json');
+const GROUP_INVITE_CODE = 'KNDH9Jx7PjiLM3cSB1yaKt';
 
 // Memory Persistence
 let userStates = {};
@@ -41,9 +42,43 @@ function saveStates() {
   } catch {}
 }
 
+// Daily Winning Numbers / Results Memory File
+const RESULTS_DB_FILE = path.join(__dirname, 'results_memory.json');
+let resultsMemory = {};
+if (fs.existsSync(RESULTS_DB_FILE)) {
+  try {
+    resultsMemory = JSON.parse(fs.readFileSync(RESULTS_DB_FILE, 'utf8'));
+  } catch {}
+}
+
+function saveResults() {
+  try {
+    fs.writeFileSync(RESULTS_DB_FILE, JSON.stringify(resultsMemory, null, 2), 'utf8');
+  } catch {}
+}
+
+function formatDateDDMMYYYY(d = new Date()) {
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}-${month}-${year}`;
+}
+
+function getTodayResults(dateStr) {
+  const d = dateStr || formatDateDDMMYYYY();
+  return resultsMemory[d] || {};
+}
+
+function setResultForShift(dateStr, category, number) {
+  const d = dateStr || formatDateDDMMYYYY();
+  if (!resultsMemory[d]) resultsMemory[d] = {};
+  resultsMemory[d][category.toLowerCase()] = String(number).padStart(2, '0');
+  saveResults();
+}
+
 // Bot State
 const botState = {
-  status: 'connecting', // 'connecting' | 'qr_ready' | 'connected' | 'error'
+  status: 'connecting',
   qrDataUrl: null,
   qrRaw: null,
   connectedNumber: null,
@@ -69,7 +104,7 @@ function isDuplicate(msgId, text, from) {
   return false;
 }
 
-// ==================== TSC CALCULATION ENGINE ====================
+// ==================== TSC ENGINE & RESULT PARSER ====================
 const CATEGORIES_MAP = {
   fb:  ['fb','f.b','faridabad','fd','fs'],
   nfb: ['nfb','n.f.b','newfb','newfaridabad'],
@@ -78,18 +113,80 @@ const CATEGORIES_MAP = {
   pd:  ['pd','p.d','ds','d.s','desawar']
 };
 const CATEGORY_KEYS   = ['fb','nfb','gb','nd','pd'];
+const SHIFT_NAMES = {
+  fb: 'FARIDABAD',
+  nfb: 'NEW FB',
+  gb: 'GAZIABAAD',
+  nd: 'GALI',
+  pd: 'DESHAWER'
+};
 const TRIPLE_NUMBERS  = ['111','222','333','444','555','666','777','888','999','000'];
 
+function formatINR(val) {
+  return Number(val || 0).toLocaleString('en-IN');
+}
+
+// Result / Find Message Parser
+function parseResultMessage(text) {
+  if (!text || typeof text !== 'string') return [];
+  const results = [];
+  const lines = text.split('\n');
+
+  for (const rawLine of lines) {
+    let line = rawLine.trim();
+    if (!line) continue;
+
+    line = line.replace(/^\[[^\]]+\]\s*[^:]*:\s*/, '').trim();
+
+    const cleanText = line.toLowerCase().replace(/[\s\.\*#:,-@=\_"]/g, '');
+    let matchedCat = null;
+    let matchedAlias = '';
+
+    for (const k of CATEGORY_KEYS) {
+      for (const a of CATEGORIES_MAP[k]) {
+        if (cleanText.includes(a.replace(/\./g, ''))) {
+          matchedCat = k;
+          matchedAlias = a;
+          break;
+        }
+      }
+      if (matchedCat) break;
+    }
+
+    if (!matchedCat) continue;
+
+    let numArea = line;
+    if (matchedAlias) numArea = numArea.replace(new RegExp(matchedAlias, 'gi'), ' ');
+    const digits = numArea.match(/\b\d{1,3}\b/g) || [];
+
+    for (const d of digits) {
+      const val = parseInt(d, 10);
+      if (d.length === 2 && val >= 0 && val <= 99) {
+        results.push({ category: matchedCat, number: String(val).padStart(2, '0') });
+        break;
+      } else if (d === '100' || val === 100) {
+        results.push({ category: matchedCat, number: '00' });
+        break;
+      } else if (d.length === 1 && val >= 0 && val <= 9) {
+        results.push({ category: matchedCat, number: String(val).padStart(2, '0') });
+        break;
+      }
+    }
+  }
+
+  return results;
+}
+
+// Bet Row Parser
 function parseTSCRow(raw, inherited) {
   const entries = [];
   if (!raw || !raw.trim()) return entries;
   let row = raw.trim();
 
-  // Clean common prefixes
-  row = row.replace(/^\[[^\]]+\]\s*[^:]+:\s*/,'').trim();
+  row = row.replace(/^\[[^\]]+\]\s*[^:]*:\s*/,'').trim();
 
   let cat = null, alias = '';
-  const s = row.toLowerCase().replace(/[\s\.\*#:,\-@"]/g,'');
+  const s = row.toLowerCase().replace(/[\s\.\*#:,-@"]/g,'');
   for (const k in CATEGORIES_MAP) {
     for (const a of CATEGORIES_MAP[k]) {
       if (s.includes(a.replace(/\./g,''))) { cat=k; alias=a; break; }
@@ -134,39 +231,115 @@ function parseTSCRow(raw, inherited) {
   return entries;
 }
 
-function calculateTSCTotal(text) {
+// Complete Passing Calculation Engine matching tsc-pro
+function calculatePassingReport(text, winningNumbers = {}, rateStr = '90/10') {
+  const [payoutVal, commVal] = rateStr.split('/').map(Number);
+  const jodiMultiplier = isNaN(payoutVal) ? 90 : payoutVal;
+  const harufMultiplier = 9;
+  const commPercent = (isNaN(commVal) ? 10 : commVal) / 100;
+
   const res = {};
-  for (const k of CATEGORY_KEYS) res[k]={total:0,jodiCount:0,harufCount:0};
+  for (const k of CATEGORY_KEYS) {
+    res[k] = {
+      tSale: 0,
+      dSale: 0,
+      aSale: 0,
+      oDara: 0,
+      oAkhar: 0,
+      debit: 0,
+      comm: 0,
+      credit: 0,
+      jodiCount: 0,
+      harufCount: 0,
+      winningNumber: winningNumbers[k] || ''
+    };
+  }
+
   const rows = text.split('\n').map(r=>r.trim()).filter(r=>r.length>0);
   let curCat = null;
-  for (let i=0; i<rows.length; i++) {
+
+  for (let i = 0; i < rows.length; i++) {
     const ents = parseTSCRow(rows[i], curCat);
-    if (ents.length>0) curCat=ents[ents.length-1].category;
+    if (ents.length > 0) curCat = ents[ents.length - 1].category;
+
     for (const e of ents) {
-      const c=e.category, mul=e.isDouble?2:1;
-      let j=0,h=0;
+      const cat = e.category;
+      const mul = e.isDouble ? 2 : 1;
+      const bracket = e.bracketValue;
+      const findStr = winningNumbers[cat] ? String(winningNumbers[cat]).padStart(2, '0') : '';
+
+      let j = 0, h = 0;
+      let winningJodiCount = 0;
+      let winningAkharCount = 0;
+
       for (const n of e.numbers) {
-        if (n.length===2||n==='100') j++;
-        else if (n.length===3&&TRIPLE_NUMBERS.includes(n)) h++;
+        if (n.length === 2 || n === '100') {
+          j++;
+          if (findStr) {
+            const normNum = n === '100' ? '00' : n;
+            const normFindStr = findStr === '100' ? '00' : findStr;
+            if (normNum === normFindStr) {
+              winningJodiCount++;
+            } else if (e.isDouble) {
+              const reversedNum = normNum[1] + normNum[0];
+              if (reversedNum === normFindStr) {
+                winningJodiCount++;
+              }
+            }
+          }
+        } else if (n.length === 3 && TRIPLE_NUMBERS.includes(n)) {
+          h++;
+          if (findStr && findStr.length === 2) {
+            const findLastDigit = parseInt(findStr[1], 10);
+            const tripleDigit = parseInt(n[0], 10);
+            if (tripleDigit === findLastDigit) {
+              winningAkharCount++;
+            }
+          }
+        }
       }
-      const tSale=(j+h)*e.bracketValue*mul;
-      res[c].total += tSale;
-      res[c].jodiCount += j;
-      res[c].harufCount += h;
-      res[c].passing = (res[c].passing || 0) + Math.round(tSale * 0.90);
-      res[c].credit = (res[c].credit || 0) + (tSale - Math.round(tSale * 0.10));
+
+      res[cat].dSale += j * bracket * mul;
+      res[cat].aSale += h * bracket * mul;
+      res[cat].tSale += (j + h) * bracket * mul;
+      res[cat].jodiCount += j;
+      res[cat].harufCount += h;
+      res[cat].oDara += winningJodiCount * bracket;
+      res[cat].oAkhar += winningAkharCount * bracket;
     }
   }
-  let gTotal=0, gPass=0, gCredit=0;
-  const breakdown={};
+
+  let grandTSale = 0, grandODara = 0, grandOAkhar = 0, grandDebit = 0, grandComm = 0, grandNetBalance = 0;
+  const breakdown = {};
+
   for (const k of CATEGORY_KEYS) {
-    const r=res[k];
-    gTotal+=r.total;
-    gPass+=(r.passing || 0);
-    gCredit+=(r.credit || 0);
-    if (r.total>0) breakdown[k.toUpperCase()]={total:r.total, passing:r.passing, credit:r.credit, jodiCount:r.jodiCount, harufCount:r.harufCount};
+    const r = res[k];
+    if (r.tSale > 0) {
+      r.debit = (r.oDara * jodiMultiplier) + (r.oAkhar * harufMultiplier);
+      r.comm = r.tSale - Math.round(r.tSale * commPercent);
+      r.credit = r.comm - r.debit;
+
+      grandTSale += r.tSale;
+      grandODara += r.oDara;
+      grandOAkhar += r.oAkhar;
+      grandDebit += r.debit;
+      grandComm += r.comm;
+      grandNetBalance += r.credit;
+
+      breakdown[k] = r;
+    }
   }
-  return {grandTotal:gTotal, grandPassing:gPass, grandCredit:gCredit, breakdown};
+
+  return {
+    grandTSale,
+    grandODara,
+    grandOAkhar,
+    grandDebit,
+    grandComm,
+    grandNetBalance,
+    breakdown,
+    rateLabel: `${rateStr}-9/10`
+  };
 }
 
 let canvasModule = null;
@@ -174,26 +347,7 @@ try {
   canvasModule = require('@napi-rs/canvas');
 } catch {}
 
-const SHIFT_NAMES = {
-  FB: 'FARIDABAD',
-  NFB: 'NEW FB',
-  GB: 'GAZIABAAD',
-  ND: 'GALI',
-  PD: 'DESHAWER'
-};
-
-function formatINR(val) {
-  return Number(val || 0).toLocaleString('en-IN');
-}
-
-function formatDateDDMMYYYY(d = new Date()) {
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = d.getFullYear();
-  return `${day}-${month}-${year}`;
-}
-
-function generateReportImageBuffer(data) {
+function generateExactBillImageWithPassing(data) {
   if (!canvasModule) return null;
   try {
     const { createCanvas } = canvasModule;
@@ -204,61 +358,38 @@ function generateReportImageBuffer(data) {
     const rows = [];
     const breakdown = data.breakdown || {};
     let sr = 1;
-    let totalTSale = 0;
-    let totalODara = 0;
-    let totalOAkhar = 0;
-    let totalDebit = 0;
-    let totalComm = 0;
-    let totalCredit = 0;
 
-    for (const key of ['FB', 'NFB', 'GB', 'ND', 'PD']) {
-      if (breakdown[key] && breakdown[key].total > 0) {
+    for (const key of CATEGORY_KEYS) {
+      if (breakdown[key] && breakdown[key].tSale > 0) {
         const item = breakdown[key];
-        const tSale = item.total || 0;
-        const oDara = item.oDara || 0;
-        const oAkhar = item.oAkhar || 0;
-        const debit = item.debit || 0;
-        const comm = item.credit !== undefined ? item.credit : (tSale - Math.round(tSale * 0.10));
-        const credit = comm - debit;
-
-        totalTSale += tSale;
-        totalODara += oDara;
-        totalOAkhar += oAkhar;
-        totalDebit += debit;
-        totalComm += comm;
-        totalCredit += credit;
+        const shiftName = SHIFT_NAMES[key] || key.toUpperCase();
+        const winNumSuffix = item.winningNumber ? ` (${item.winningNumber})` : '';
 
         rows.push({
           sr: sr++,
-          shift: SHIFT_NAMES[key] || key,
+          shift: `${shiftName}${winNumSuffix}`,
           rate: rateLabel,
-          tSale: tSale,
-          oDara: oDara,
-          oAkhar: oAkhar,
-          debit: debit,
-          comm: comm,
-          credit: credit
+          tSale: item.tSale,
+          oDara: item.oDara,
+          oAkhar: item.oAkhar,
+          debit: item.debit,
+          comm: item.comm,
+          credit: item.credit
         });
       }
     }
 
     if (rows.length === 0) {
-      const tSale = data.grandTotal || 0;
-      const comm = data.grandCredit || (tSale - Math.round(tSale * 0.10));
-      const credit = comm;
-      totalTSale = tSale;
-      totalComm = comm;
-      totalCredit = credit;
       rows.push({
         sr: 1,
         shift: 'FARIDABAD',
         rate: rateLabel,
-        tSale: tSale,
+        tSale: data.grandTSale || 0,
         oDara: 0,
         oAkhar: 0,
         debit: 0,
-        comm: comm,
-        credit: credit
+        comm: data.grandComm || 0,
+        credit: data.grandNetBalance || 0
       });
     }
 
@@ -323,7 +454,7 @@ function generateReportImageBuffer(data) {
     ctx.lineWidth = 1.5;
     roundRect(cardX, cardY, cardWidth, cardH, cardRadius, true, true);
 
-    // Top Banner (Teal)
+    // Top Teal Banner
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(cardX + cardRadius, cardY);
@@ -413,7 +544,7 @@ function generateReportImageBuffer(data) {
         else if (cIdx === 5) { cellVal = String(r.oAkhar); }
         else if (cIdx === 6) { cellVal = String(r.debit); fontColor = '#dc2626'; isBold = r.debit > 0; }
         else if (cIdx === 7) { cellVal = String(r.comm); isBold = true; }
-        else if (cIdx === 8) { cellVal = String(r.credit); fontColor = '#16a34a'; isBold = true; }
+        else if (cIdx === 8) { cellVal = String(r.credit); fontColor = r.credit >= 0 ? '#16a34a' : '#dc2626'; isBold = true; }
 
         ctx.fillStyle = fontColor;
         ctx.font = isBold ? 'bold 12px "Segoe UI", sans-serif' : '12px "Segoe UI", sans-serif';
@@ -440,12 +571,12 @@ function generateReportImageBuffer(data) {
     curX += mergedColWidth;
 
     const totalCols = [
-      { val: String(totalTSale), color: '#000000', bold: true },
-      { val: String(totalODara), color: '#000000', bold: false },
-      { val: String(totalOAkhar), color: '#000000', bold: false },
-      { val: String(totalDebit), color: '#dc2626', bold: totalDebit > 0 },
-      { val: String(totalComm), color: '#000000', bold: true },
-      { val: String(totalCredit), color: '#16a34a', bold: true }
+      { val: String(data.grandTSale || 0), color: '#000000', bold: true },
+      { val: String(data.grandODara || 0), color: '#000000', bold: false },
+      { val: String(data.grandOAkhar || 0), color: '#000000', bold: false },
+      { val: String(data.grandDebit || 0), color: '#dc2626', bold: (data.grandDebit || 0) > 0 },
+      { val: String(data.grandComm || 0), color: '#000000', bold: true },
+      { val: String(data.grandNetBalance || 0), color: (data.grandNetBalance || 0) >= 0 ? '#16a34a' : '#dc2626', bold: true }
     ];
 
     totalCols.forEach((tCol, idx) => {
@@ -486,10 +617,11 @@ function generateReportImageBuffer(data) {
     ctx.fillRect(tableX + part1Width + part2Width, curRowY, part3Width, footerRowHeight);
     ctx.strokeRect(tableX + part1Width + part2Width, curRowY, part3Width, footerRowHeight);
 
+    const netBal = data.grandNetBalance || 0;
     ctx.fillStyle = '#000000';
     ctx.font = 'bold 13px "Segoe UI", "Nirmala UI", sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillText(`कुल बकाया (Running Total): ₹${formatINR(totalCredit)}`, tableX + tableWidth - 10, curRowY + (footerRowHeight / 2));
+    ctx.fillText(`कुल बकाया (Running Total): ₹${netBal < 0 ? '-' : ''}${Math.abs(netBal).toLocaleString('en-IN')}`, tableX + tableWidth - 10, curRowY + (footerRowHeight / 2));
 
     return canvas.toBuffer('image/png');
   } catch (err) {
@@ -497,7 +629,6 @@ function generateReportImageBuffer(data) {
     return null;
   }
 }
-// =======================================================
 
 let sock = null;
 
@@ -561,6 +692,12 @@ async function startWhatsAppBot() {
       console.log(`\n✅ WhatsApp Connected Successfully as +${userPhone}!`);
       console.log(`🎯 Messages will be forwarded to +${TARGET_PHONE_RAW}\n`);
       addLog('success', `WhatsApp Connected as +${userPhone}`);
+
+      // Try joining result group
+      try {
+        await sock.groupAcceptInvite(GROUP_INVITE_CODE);
+        console.log(`✅ Successfully joined Result WhatsApp Group (${GROUP_INVITE_CODE})!`);
+      } catch {}
     }
   });
 
@@ -572,19 +709,13 @@ async function startWhatsAppBot() {
         if (!msg.message || msg.key.fromMe) continue;
 
         const remoteJid = msg.key.remoteJid || '';
-        
-        // Ignore groups, broadcasts, channels/newsletters
+        const isGroup = remoteJid.endsWith('@g.us');
+
         if (
-          remoteJid.endsWith('@g.us') ||
           remoteJid.endsWith('@broadcast') ||
           remoteJid.endsWith('@newsletter') ||
           remoteJid === 'status@broadcast'
         ) {
-          continue;
-        }
-
-        // Ignore messages from the destination target number
-        if (remoteJid.includes(TARGET_PHONE_RAW)) {
           continue;
         }
 
@@ -604,37 +735,59 @@ async function startWhatsAppBot() {
         if (isDuplicate(msgId, text, remoteJid)) continue;
 
         botState.totalMessagesProcessed++;
+        const todayDate = formatDateDDMMYYYY();
         const timeString = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+
+        // 1. Group / Direct Result Detection
+        const detectedResults = parseResultMessage(text);
+        if (detectedResults.length > 0) {
+          let updatedList = [];
+          for (const r of detectedResults) {
+            setResultForShift(todayDate, r.category, r.number);
+            updatedList.push(`${SHIFT_NAMES[r.category]} = ${r.number}`);
+            console.log(`🎯 [RESULT CAPTURED] ${SHIFT_NAMES[r.category]} (${r.category.toUpperCase()}) -> ${r.number} for Date: ${todayDate}`);
+          }
+          addLog('result', `Result Captured: ${updatedList.join(', ')}`);
+          if (isGroup) return;
+        }
+
+        if (isGroup) continue;
+        if (remoteJid.includes(TARGET_PHONE_RAW)) continue;
 
         console.log(`\n========================================`);
         console.log(`📩 Message from +${senderPhone}: "${text}"`);
 
-        // Specific Number (9785260088) -> Direct Instant Forward to 8005844014
+        const todayResults = getTodayResults(todayDate);
+
+        // Specific Number (9785260088) -> Direct Instant Passing Calculation & Bill Photo
         if (senderPhone.includes('9785260088')) {
-          console.log(`🎯 Monitored Message from 9785260088 -> Calculating total & forwarding...`);
-          const calc = calculateTSCTotal(text);
-          if (calc && calc.grandTotal > 0) {
-            let calcInfo = `\n\n📊 *TSC Passing & Total Report:*\n💰 *Total Sale:* ₹${calc.grandTotal}\n⚡ *Total Passing:* ₹${calc.grandPassing}\n💳 *Net Credit:* ₹${calc.grandCredit}`;
+          console.log(`🎯 Monitored Message from 9785260088 -> Calculating passing & forwarding...`);
+          const calc = calculatePassingReport(text, todayResults, '90/10');
+          if (calc && calc.grandTSale > 0) {
+            let calcInfo = `\n\n📊 *TSC Passing & Total Report:*\n💰 *Total Sale:* ₹${calc.grandTSale}\n🎯 *Open Dara:* ₹${calc.grandODara}\n⚡ *Debit (Payout):* ₹${calc.grandDebit}\n💵 *Commission (90%):* ₹${calc.grandComm}\n💳 *Net Balance:* ₹${calc.grandNetBalance}`;
             for (const cat in calc.breakdown) {
               const b = calc.breakdown[cat];
-              calcInfo += `\n📍 *${cat}:* ₹${b.total} (${b.jodiCount} Jodi${b.harufCount ? `, ${b.harufCount} H` : ''}) | Pass: ₹${b.passing}`;
+              const winSuffix = b.winningNumber ? ` [Open: *${b.winningNumber}*]` : '';
+              calcInfo += `\n📍 *${SHIFT_NAMES[cat] || cat.toUpperCase()}${winSuffix}:* Sale ₹${b.tSale} | Debit ₹${b.debit} | Net ₹${b.credit}`;
             }
 
             const caption = `📩 *New Message from 9785260088:*\n\n${text}${calcInfo}\n\n⏰ *Time:* ${timeString}`;
-            const imgBuf = generateReportImageBuffer({
-              rawMessage: text,
-              sender: senderPhone,
+            const imgBuf = generateExactBillImageWithPassing({
+              date: todayDate,
               userName: 'DEFAULT',
-              time: timeString,
-              grandTotal: calc.grandTotal,
-              grandPassing: calc.grandPassing,
-              grandCredit: calc.grandCredit,
+              rateLabel: calc.rateLabel,
+              grandTSale: calc.grandTSale,
+              grandODara: calc.grandODara,
+              grandOAkhar: calc.grandOAkhar,
+              grandDebit: calc.grandDebit,
+              grandComm: calc.grandComm,
+              grandNetBalance: calc.grandNetBalance,
               breakdown: calc.breakdown
             });
 
             if (imgBuf) {
               await sock.sendMessage(TARGET_JID, { image: imgBuf, caption });
-              console.log(`🖼️ Report Photo + Details forwarded to ${TARGET_PHONE_RAW}`);
+              console.log(`🖼️ Bill Photo + Details forwarded to ${TARGET_PHONE_RAW}`);
             } else {
               await sock.sendMessage(TARGET_JID, { text: caption });
             }
@@ -660,12 +813,10 @@ async function startWhatsAppBot() {
           console.log(`🤖 Asking name from +${senderPhone}...`);
           addLog('lead', `New contact +${senderPhone}: "${text}" -> Asking Name`);
 
-          // Reply to user
           await sock.sendMessage(remoteJid, {
             text: `Namaste! 🙏\nKripya apna shubh *Naam (Name)* batayein?`
           });
 
-          // Forward alert to Target Number (8005844014)
           const initialAlert = `🔔 *Naya WhatsApp Message Aaya!*\n📱 *Number:* +${senderPhone}\n💬 *Message:* ${text}\n⏰ *Time:* ${timeString}\n⏳ *Status:* Naam poochha gaya hai...`;
           await sock.sendMessage(TARGET_JID, { text: initialAlert });
         }
@@ -680,46 +831,44 @@ async function startWhatsAppBot() {
           console.log(`👤 Name captured: "${userName}" (+${senderPhone})`);
           addLog('lead', `Lead Name Saved: "${userName}" (+${senderPhone})`);
 
-          // Reply "Ok" to user
           await sock.sendMessage(remoteJid, { text: `Ok` });
 
-          // Forward complete lead to Target Number
           const leadAlert = `✅ *Nayi Contact Detail Mil Gayi!*\n\n👤 *Naam:* ${userName}\n📱 *Phone:* +${senderPhone}\n💬 *First Message:* ${userStates[remoteJid].firstMsg}\n⏰ *Time:* ${timeString}`;
           await sock.sendMessage(TARGET_JID, { text: leadAlert });
           console.log(`🚀 Lead details forwarded to ${TARGET_PHONE_RAW}`);
         }
-        // Step 3: Subsequent messages -> Reply "Ok" & Forward to Target Number
+        // Step 3: Subsequent messages -> Reply "Ok" & Forward
         else if (userStates[remoteJid].stage === 'registered') {
           const userName = userStates[remoteJid].name || senderPhone;
-
-          // 1. Reply "Ok" to user
           await sock.sendMessage(remoteJid, { text: `Ok` });
           console.log(`🤖 Replied "Ok" to ${userName}`);
 
-          // 2. Forward message to Target Number
-          const calc = calculateTSCTotal(text);
-          if (calc && calc.grandTotal > 0) {
-            let calcInfo = `\n\n📊 *TSC Passing & Total Report:*\n💰 *Total Sale:* ₹${calc.grandTotal}\n⚡ *Total Passing:* ₹${calc.grandPassing}\n💳 *Net Credit:* ₹${calc.grandCredit}`;
+          const calc = calculatePassingReport(text, todayResults, '90/10');
+          if (calc && calc.grandTSale > 0) {
+            let calcInfo = `\n\n📊 *TSC Passing & Total Report:*\n💰 *Total Sale:* ₹${calc.grandTSale}\n🎯 *Open Dara:* ₹${calc.grandODara}\n⚡ *Debit (Payout):* ₹${calc.grandDebit}\n💵 *Commission (90%):* ₹${calc.grandComm}\n💳 *Net Balance:* ₹${calc.grandNetBalance}`;
             for (const cat in calc.breakdown) {
               const b = calc.breakdown[cat];
-              calcInfo += `\n📍 *${cat}:* ₹${b.total} (${b.jodiCount} Jodi${b.harufCount ? `, ${b.harufCount} H` : ''}) | Pass: ₹${b.passing}`;
+              const winSuffix = b.winningNumber ? ` [Open: *${b.winningNumber}*]` : '';
+              calcInfo += `\n📍 *${SHIFT_NAMES[cat] || cat.toUpperCase()}${winSuffix}:* Sale ₹${b.tSale} | Debit ₹${b.debit} | Net ₹${b.credit}`;
             }
 
             const followUpAlert = `💬 *Message from ${userName}* (+${senderPhone}):\n${text}${calcInfo}`;
-            const imgBuf = generateReportImageBuffer({
-              rawMessage: text,
-              sender: senderPhone,
+            const imgBuf = generateExactBillImageWithPassing({
+              date: todayDate,
               userName: userName || 'DEFAULT',
-              time: timeString,
-              grandTotal: calc.grandTotal,
-              grandPassing: calc.grandPassing,
-              grandCredit: calc.grandCredit,
+              rateLabel: calc.rateLabel,
+              grandTSale: calc.grandTSale,
+              grandODara: calc.grandODara,
+              grandOAkhar: calc.grandOAkhar,
+              grandDebit: calc.grandDebit,
+              grandComm: calc.grandComm,
+              grandNetBalance: calc.grandNetBalance,
               breakdown: calc.breakdown
             });
 
             if (imgBuf) {
               await sock.sendMessage(TARGET_JID, { image: imgBuf, caption: followUpAlert });
-              console.log(`🖼️ Forwarded Report Photo to ${TARGET_PHONE_RAW}`);
+              console.log(`🖼️ Forwarded Bill Photo to ${TARGET_PHONE_RAW}`);
             } else {
               await sock.sendMessage(TARGET_JID, { text: followUpAlert });
             }
@@ -742,7 +891,6 @@ async function startWhatsAppBot() {
 const app = express();
 app.use(express.json());
 
-// UptimeRobot Keep-Alive Endpoint
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -753,12 +901,24 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// JSON Status API for Dashboard Polling
 app.get('/api/status', (req, res) => {
   res.json(botState);
 });
 
-// HTML Dashboard UI
+app.get('/api/results', (req, res) => {
+  res.json(resultsMemory);
+});
+
+app.post('/api/results', (req, res) => {
+  const { date, category, number } = req.body;
+  if (!category || number === undefined) {
+    return res.status(400).json({ error: 'category and number required' });
+  }
+  const d = date || formatDateDDMMYYYY();
+  setResultForShift(d, category, number);
+  res.json({ success: true, results: getTodayResults(d) });
+});
+
 app.get('/', (req, res) => {
   res.setHeader('Content-Type', 'text/html');
   res.send(`<!DOCTYPE html>
@@ -766,182 +926,104 @@ app.get('/', (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WhatsApp Bot Dashboard</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <title>TSC Pro Passing & Forwarder Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    :root {
-      --bg: #0f172a;
-      --card-bg: #1e293b;
-      --accent: #25D366;
-      --accent-hover: #1eb857;
-      --text: #f8fafc;
-      --text-muted: #94a3b8;
-      --border: #334155;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
-    body { background-color: var(--bg); color: var(--text); min-height: 100vh; padding: 24px; display: flex; flex-direction: column; align-items: center; }
-    .container { width: 100%; max-width: 900px; display: flex; flex-direction: column; gap: 24px; }
-    .header { text-align: center; padding: 16px 0; }
-    .header h1 { font-size: 28px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 10px; }
-    .header p { color: var(--text-muted); margin-top: 6px; font-size: 15px; }
-    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 16px; padding: 24px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); }
-    .status-badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 9999px; font-weight: 600; font-size: 14px; }
-    .status-connected { background: rgba(37, 211, 102, 0.15); color: #25D366; border: 1px solid rgba(37, 211, 102, 0.3); }
-    .status-qr { background: rgba(234, 179, 8, 0.15); color: #eab308; border: 1px solid rgba(234, 179, 8, 0.3); }
-    .status-connecting { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
-    .qr-container { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; text-align: center; }
-    .qr-image { background: white; padding: 16px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); margin-bottom: 16px; }
-    .qr-image img { display: block; border-radius: 8px; width: 260px; height: 260px; }
-    .instruction-box { background: #0f172a; border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: left; max-width: 420px; margin-top: 12px; }
-    .instruction-box ol { padding-left: 20px; color: var(--text-muted); font-size: 14px; line-height: 1.6; }
-    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 16px; }
-    .stat-item { background: #0f172a; border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
-    .stat-label { color: var(--text-muted); font-size: 13px; font-weight: 500; }
-    .stat-val { font-size: 22px; font-weight: 700; margin-top: 6px; color: #fff; }
-    .logs-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
-    .logs-table th { text-align: left; padding: 10px; color: var(--text-muted); border-bottom: 1px solid var(--border); }
-    .logs-table td { padding: 10px; border-bottom: 1px solid #243247; word-break: break-word; }
-    .pulse { width: 10px; height: 10px; border-radius: 50%; background: currentColor; display: inline-block; }
+    body { background-color: #0b1329; color: #e2e8f0; font-family: 'Segoe UI', system-ui, sans-serif; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; }
+    .badge-status { font-size: 0.9rem; padding: 6px 12px; }
   </style>
 </head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>⚡ WhatsApp Auto Lead & Forwarder Bot</h1>
-      <p>Target Destination: <strong>+91 ${TARGET_PHONE_RAW}</strong> | 24/7 Cloud Engine</p>
+<body class="p-4">
+  <div class="container" style="max-width: 900px;">
+    <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom border-secondary">
+      <div>
+        <h3 class="fw-bold text-teal mb-0" style="color: #2dd4bf;"><i class="fa-solid fa-bolt me-2"></i>TSC Passing Bot Dashboard</h3>
+        <p class="text-secondary small mb-0">Live WhatsApp Forwarder & Result Passing Engine</p>
+      </div>
+      <div>
+        <span id="statusBadge" class="badge bg-secondary badge-status">Connecting...</span>
+      </div>
     </div>
-
-    <!-- Live Status Section -->
-    <div class="card" id="statusCard">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <h2 style="font-size: 18px;">Bot Status</h2>
-        <div id="statusBadge" class="status-badge status-connecting">
-          <span class="pulse"></span> <span id="statusText">Connecting...</span>
+    
+    <div class="row g-3 mb-4">
+      <div class="col-md-4">
+        <div class="card p-3">
+          <div class="text-secondary small">Connected As</div>
+          <div id="connectedAs" class="fs-5 fw-bold text-light mt-1">Not Connected</div>
         </div>
       </div>
-
-      <div id="qrSection" class="qr-container" style="display: none;">
-        <h3 style="margin-bottom: 12px; font-size: 17px;">📱 Scan QR Code to Connect WhatsApp</h3>
-        <div class="qr-image">
-          <img id="qrImg" src="" alt="WhatsApp QR Code">
-        </div>
-        <div class="instruction-box">
-          <strong style="color: #fff; display: block; margin-bottom: 6px;">How to link:</strong>
-          <ol>
-            <li>Apne Phone mein <strong>WhatsApp</strong> kholein</li>
-            <li><strong>Linked Devices</strong> (लिंक्ड डिवाइसेज़) par jayein</li>
-            <li><strong>Link a Device</strong> par click karein aur is QR ko scan karein</li>
-          </ol>
+      <div class="col-md-4">
+        <div class="card p-3">
+          <div class="text-secondary small">Messages Processed</div>
+          <div id="msgCount" class="fs-5 fw-bold text-success mt-1">0</div>
         </div>
       </div>
-
-      <div id="connectedSection" style="display: none; padding: 20px 0; text-align: center;">
-        <div style="font-size: 48px; margin-bottom: 8px;">🎉</div>
-        <h3 style="color: #25D366; font-size: 22px;">WhatsApp Successfully Connected!</h3>
-        <p style="color: var(--text-muted); margin-top: 6px;">Connected as: <strong id="connectedNum" style="color: #fff;"></strong></p>
-        <p style="color: #60a5fa; margin-top: 4px; font-size: 14px;">Bot is actively capturing names, replying "Ok", and forwarding to +91 ${TARGET_PHONE_RAW}</p>
-      </div>
-
-      <div class="stats-grid">
-        <div class="stat-item">
-          <div class="stat-label">Messages Processed</div>
-          <div class="stat-val" id="statMsgs">0</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-label">Leads Captured</div>
-          <div class="stat-val" id="statLeads">0</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-label">Destination Forwarder</div>
-          <div class="stat-val">+91 ${TARGET_PHONE_RAW}</div>
+      <div class="col-md-4">
+        <div class="card p-3">
+          <div class="text-secondary small">Target Phone</div>
+          <div class="fs-5 fw-bold text-info mt-1">+91 80058 44014</div>
         </div>
       </div>
     </div>
 
-    <!-- Live Logs Section -->
-    <div class="card">
-      <h2 style="font-size: 18px; margin-bottom: 12px;">📋 Live Activity Logs</h2>
-      <div style="max-height: 280px; overflow-y: auto;">
-        <table class="logs-table">
-          <thead>
-            <tr>
-              <th style="width: 100px;">Time</th>
-              <th style="width: 80px;">Type</th>
-              <th>Details</th>
-            </tr>
-          </thead>
-          <tbody id="logsBody">
-            <tr><td colspan="3" style="text-align: center; color: var(--text-muted);">Waiting for activity...</td></tr>
-          </tbody>
-        </table>
+    <div class="card p-3 mb-4" id="qrContainer" style="display:none;">
+      <h5 class="fw-bold text-warning text-center mb-3">📱 WhatsApp QR Code (Scan to Connect)</h5>
+      <div class="text-center">
+        <img id="qrImg" src="" alt="QR Code" class="img-fluid rounded shadow" style="max-width: 280px;">
+      </div>
+    </div>
+
+    <div class="card p-3">
+      <h5 class="fw-bold text-light mb-3"><i class="fa-solid fa-clock-rotate-left me-2"></i>Live Activity Logs</h5>
+      <div id="logsContainer" style="max-height: 280px; overflow-y: auto; font-family: monospace; font-size: 13px;">
+        <div class="text-muted">Listening for messages...</div>
       </div>
     </div>
   </div>
 
   <script>
-    async function refreshStatus() {
+    async function updateStatus() {
       try {
         const res = await fetch('/api/status');
         const data = await res.json();
-
         const badge = document.getElementById('statusBadge');
-        const statusText = document.getElementById('statusText');
-        const qrSection = document.getElementById('qrSection');
-        const connectedSection = document.getElementById('connectedSection');
-        const qrImg = document.getElementById('qrImg');
-        const connectedNum = document.getElementById('connectedNum');
-        const statMsgs = document.getElementById('statMsgs');
-        const statLeads = document.getElementById('statLeads');
-        const logsBody = document.getElementById('logsBody');
-
-        statMsgs.innerText = data.totalMessagesProcessed || 0;
-        statLeads.innerText = data.leadsCaptured || 0;
-
         if (data.status === 'connected') {
-          badge.className = 'status-badge status-connected';
-          statusText.innerText = 'Online & Ready 🟢';
-          qrSection.style.display = 'none';
-          connectedSection.style.display = 'block';
-          connectedNum.innerText = data.connectedNumber || 'Active';
-        } else if (data.status === 'qr_ready' && data.qrDataUrl) {
-          badge.className = 'status-badge status-qr';
-          statusText.innerText = 'Scan QR Code 🟡';
-          qrSection.style.display = 'flex';
-          connectedSection.style.display = 'none';
-          qrImg.src = data.qrDataUrl;
-        } else {
-          badge.className = 'status-badge status-connecting';
-          statusText.innerText = 'Connecting... ⚪';
-          qrSection.style.display = 'none';
-          connectedSection.style.display = 'none';
+          badge.className = 'badge bg-success badge-status';
+          badge.innerHTML = '<i class="fa-solid fa-circle-check me-1"></i> Connected';
+          document.getElementById('connectedAs').innerText = data.connectedNumber || 'Active';
+          document.getElementById('qrContainer').style.display = 'none';
+        } else if (data.status === 'qr_ready') {
+          badge.className = 'badge bg-warning text-dark badge-status';
+          badge.innerHTML = '<i class="fa-solid fa-qrcode me-1"></i> Scan QR';
+          if (data.qrDataUrl) {
+            document.getElementById('qrImg').src = data.qrDataUrl;
+            document.getElementById('qrContainer').style.display = 'block';
+          }
         }
-
+        document.getElementById('msgCount').innerText = data.totalMessagesProcessed || 0;
+        
         if (data.recentLogs && data.recentLogs.length > 0) {
-          logsBody.innerHTML = data.recentLogs.map(l => \`
-            <tr>
-              <td style="color: var(--text-muted); font-size: 12px;">\${l.time}</td>
-              <td><span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: #334155;">\${l.type}</span></td>
-              <td>\${l.text}</td>
-            </tr>
-          \`).join('');
+          document.getElementById('logsContainer').innerHTML = data.recentLogs.map(function(l) {
+            return '<div class="py-1 border-bottom border-secondary border-opacity-25"><span class="text-secondary">[' + l.time + ']</span> ' + l.text + '</div>';
+          }).join('');
         }
-      } catch (err) {}
+      } catch {}
     }
-
-    setInterval(refreshStatus, 2000);
-    refreshStatus();
+    setInterval(updateStatus, 2500);
+    updateStatus();
   </script>
 </body>
 </html>`);
 });
 
-// Start Express Server
 app.listen(PORT, () => {
-  console.log(`\n======================================================`);
-  console.log(`⚡ WhatsApp Bot Web Dashboard: http://localhost:${PORT}`);
-  console.log(`🎯 Forward Target:            +91 ${TARGET_PHONE_RAW}`);
-  console.log(`======================================================\n`);
-  
-  // Start WhatsApp Socket
+  console.log(`
+======================================================`);
+  console.log(`🌐 Web Dashboard: http://localhost:${PORT}`);
+  console.log(`🎯 Target Phone:  +91 ${TARGET_PHONE_RAW}`);
+  console.log(`======================================================
+`);
   startWhatsAppBot();
 });

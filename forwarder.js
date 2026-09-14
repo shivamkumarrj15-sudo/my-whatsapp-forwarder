@@ -1,9 +1,9 @@
 /**
- * OpenWA Smart Name-Capture & Auto "Ok" Reply + Deduplicated Forwarder Bot
+ * OpenWA Smart Name-Capture, Auto "Ok" Reply, Live Result Group Monitor & Passing Report Forwarder
  * 1. Naye user se uska Naam poochhega.
- * 2. Naam milne par details 8005844014 par forward karega.
- * 3. Uske HAR agle message par "Ok" reply karega aur wahi message aapko (8005844014) forward karega.
- * 4. Deduplication: Ek message ko 2 baar process hone se rokega.
+ * 2. Result Group (https://chat.whatsapp.com/KNDH9Jx7PjiLM3cSB1yaKt) se Live Opening Results (FB, NFB, GB, ND, PD) capture karega.
+ * 3. 9785260088 ya registered users se bet messages aane par live passing & net credit calculate karega.
+ * 4. Exact Bill / Passing Card Photo generate karke turant 8005844014 par forward karega.
  */
 
 const http = require('http');
@@ -11,15 +11,13 @@ const fs = require('fs');
 const path = require('path');
 
 // ==================== CONFIGURATION ====================
-// Destination Target Number (Aapka number jahan sabhi messages aayenge)
 const TARGET_PHONE = '918005844014@c.us'; // 8005844014
-
-// OpenWA Server settings
 const OPENWA_API_URL = 'http://localhost:2785';
 const OPENWA_API_KEY = 'owa_k1_930acb556bf7389edc17aaaf28e502b71e995d0c976322ab7ce8b44617b14aa2';
 const PORT = 3000;
+const GROUP_INVITE_CODE = 'KNDH9Jx7PjiLM3cSB1yaKt';
 
-// Contacts memory file (taaki naam hamesha yaad rahein)
+// Contacts memory file
 const DB_FILE = path.join(__dirname, 'contacts_memory.json');
 let userStates = {};
 if (fs.existsSync(DB_FILE)) {
@@ -34,17 +32,51 @@ function saveStates() {
   } catch {}
 }
 
-// Recent processed messages set to prevent duplicate handling
+// Daily Winning Numbers / Results Memory File
+const RESULTS_DB_FILE = path.join(__dirname, 'results_memory.json');
+let resultsMemory = {};
+if (fs.existsSync(RESULTS_DB_FILE)) {
+  try {
+    resultsMemory = JSON.parse(fs.readFileSync(RESULTS_DB_FILE, 'utf8'));
+  } catch {}
+}
+
+function saveResults() {
+  try {
+    fs.writeFileSync(RESULTS_DB_FILE, JSON.stringify(resultsMemory, null, 2), 'utf8');
+  } catch {}
+}
+
+function formatDateDDMMYYYY(d = new Date()) {
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}-${month}-${year}`;
+}
+
+function getTodayResults(dateStr) {
+  const d = dateStr || formatDateDDMMYYYY();
+  return resultsMemory[d] || {};
+}
+
+function setResultForShift(dateStr, category, number) {
+  const d = dateStr || formatDateDDMMYYYY();
+  if (!resultsMemory[d]) resultsMemory[d] = {};
+  resultsMemory[d][category.toLowerCase()] = String(number).padStart(2, '0');
+  saveResults();
+}
+
+// Recent processed messages set
 const processedMessages = new Set();
 function isDuplicate(msgId, text, from) {
   const key = msgId || `${from}_${text}`;
   if (processedMessages.has(key)) return true;
   processedMessages.add(key);
-  setTimeout(() => processedMessages.delete(key), 10000); // clear after 10s
+  setTimeout(() => processedMessages.delete(key), 10000);
   return false;
 }
 
-// ==================== TSC CALCULATION ENGINE ====================
+// ==================== TSC ENGINE & RESULT PARSER ====================
 const CATEGORIES_MAP = {
   fb:  ['fb','f.b','faridabad','fd','fs'],
   nfb: ['nfb','n.f.b','newfb','newfaridabad'],
@@ -53,18 +85,80 @@ const CATEGORIES_MAP = {
   pd:  ['pd','p.d','ds','d.s','desawar']
 };
 const CATEGORY_KEYS   = ['fb','nfb','gb','nd','pd'];
+const SHIFT_NAMES = {
+  fb: 'FARIDABAD',
+  nfb: 'NEW FB',
+  gb: 'GAZIABAAD',
+  nd: 'GALI',
+  pd: 'DESHAWER'
+};
 const TRIPLE_NUMBERS  = ['111','222','333','444','555','666','777','888','999','000'];
 
+function formatINR(val) {
+  return Number(val || 0).toLocaleString('en-IN');
+}
+
+// Result / Find Message Parser (extract winning numbers from group or direct messages)
+function parseResultMessage(text) {
+  if (!text || typeof text !== 'string') return [];
+  const results = [];
+  const lines = text.split('\n');
+
+  for (const rawLine of lines) {
+    let line = rawLine.trim();
+    if (!line) continue;
+
+    line = line.replace(/^\[[^\]]+\]\s*[^:]*:\s*/, '').trim();
+
+    const cleanText = line.toLowerCase().replace(/[\s\.\*#:,-@=\_"]/g, '');
+    let matchedCat = null;
+    let matchedAlias = '';
+
+    for (const k of CATEGORY_KEYS) {
+      for (const a of CATEGORIES_MAP[k]) {
+        if (cleanText.includes(a.replace(/\./g, ''))) {
+          matchedCat = k;
+          matchedAlias = a;
+          break;
+        }
+      }
+      if (matchedCat) break;
+    }
+
+    if (!matchedCat) continue;
+
+    let numArea = line;
+    if (matchedAlias) numArea = numArea.replace(new RegExp(matchedAlias, 'gi'), ' ');
+    const digits = numArea.match(/\b\d{1,3}\b/g) || [];
+
+    for (const d of digits) {
+      const val = parseInt(d, 10);
+      if (d.length === 2 && val >= 0 && val <= 99) {
+        results.push({ category: matchedCat, number: String(val).padStart(2, '0') });
+        break;
+      } else if (d === '100' || val === 100) {
+        results.push({ category: matchedCat, number: '00' });
+        break;
+      } else if (d.length === 1 && val >= 0 && val <= 9) {
+        results.push({ category: matchedCat, number: String(val).padStart(2, '0') });
+        break;
+      }
+    }
+  }
+
+  return results;
+}
+
+// Bet Row Parser
 function parseTSCRow(raw, inherited) {
   const entries = [];
   if (!raw || !raw.trim()) return entries;
   let row = raw.trim();
 
-  // Clean common prefixes
-  row = row.replace(/^\[[^\]]+\]\s*[^:]+:\s*/,'').trim();
+  row = row.replace(/^\[[^\]]+\]\s*[^:]*:\s*/,'').trim();
 
   let cat = null, alias = '';
-  const s = row.toLowerCase().replace(/[\s\.\*#:,\-@"]/g,'');
+  const s = row.toLowerCase().replace(/[\s\.\*#:,-@"]/g,'');
   for (const k in CATEGORIES_MAP) {
     for (const a of CATEGORIES_MAP[k]) {
       if (s.includes(a.replace(/\./g,''))) { cat=k; alias=a; break; }
@@ -109,39 +203,115 @@ function parseTSCRow(raw, inherited) {
   return entries;
 }
 
-function calculateTSCTotal(text) {
+// Complete Passing Calculation Engine matching tsc-pro
+function calculatePassingReport(text, winningNumbers = {}, rateStr = '90/10') {
+  const [payoutVal, commVal] = rateStr.split('/').map(Number);
+  const jodiMultiplier = isNaN(payoutVal) ? 90 : payoutVal;
+  const harufMultiplier = 9;
+  const commPercent = (isNaN(commVal) ? 10 : commVal) / 100;
+
   const res = {};
-  for (const k of CATEGORY_KEYS) res[k]={total:0,jodiCount:0,harufCount:0};
+  for (const k of CATEGORY_KEYS) {
+    res[k] = {
+      tSale: 0,
+      dSale: 0,
+      aSale: 0,
+      oDara: 0,
+      oAkhar: 0,
+      debit: 0,
+      comm: 0,
+      credit: 0,
+      jodiCount: 0,
+      harufCount: 0,
+      winningNumber: winningNumbers[k] || ''
+    };
+  }
+
   const rows = text.split('\n').map(r=>r.trim()).filter(r=>r.length>0);
   let curCat = null;
-  for (let i=0; i<rows.length; i++) {
+
+  for (let i = 0; i < rows.length; i++) {
     const ents = parseTSCRow(rows[i], curCat);
-    if (ents.length>0) curCat=ents[ents.length-1].category;
+    if (ents.length > 0) curCat = ents[ents.length - 1].category;
+
     for (const e of ents) {
-      const c=e.category, mul=e.isDouble?2:1;
-      let j=0,h=0;
+      const cat = e.category;
+      const mul = e.isDouble ? 2 : 1;
+      const bracket = e.bracketValue;
+      const findStr = winningNumbers[cat] ? String(winningNumbers[cat]).padStart(2, '0') : '';
+
+      let j = 0, h = 0;
+      let winningJodiCount = 0;
+      let winningAkharCount = 0;
+
       for (const n of e.numbers) {
-        if (n.length===2||n==='100') j++;
-        else if (n.length===3&&TRIPLE_NUMBERS.includes(n)) h++;
+        if (n.length === 2 || n === '100') {
+          j++;
+          if (findStr) {
+            const normNum = n === '100' ? '00' : n;
+            const normFindStr = findStr === '100' ? '00' : findStr;
+            if (normNum === normFindStr) {
+              winningJodiCount++;
+            } else if (e.isDouble) {
+              const reversedNum = normNum[1] + normNum[0];
+              if (reversedNum === normFindStr) {
+                winningJodiCount++;
+              }
+            }
+          }
+        } else if (n.length === 3 && TRIPLE_NUMBERS.includes(n)) {
+          h++;
+          if (findStr && findStr.length === 2) {
+            const findLastDigit = parseInt(findStr[1], 10);
+            const tripleDigit = parseInt(n[0], 10);
+            if (tripleDigit === findLastDigit) {
+              winningAkharCount++;
+            }
+          }
+        }
       }
-      const tSale=(j+h)*e.bracketValue*mul;
-      res[c].total += tSale;
-      res[c].jodiCount += j;
-      res[c].harufCount += h;
-      res[c].passing = (res[c].passing || 0) + Math.round(tSale * 0.90);
-      res[c].credit = (res[c].credit || 0) + (tSale - Math.round(tSale * 0.10));
+
+      res[cat].dSale += j * bracket * mul;
+      res[cat].aSale += h * bracket * mul;
+      res[cat].tSale += (j + h) * bracket * mul;
+      res[cat].jodiCount += j;
+      res[cat].harufCount += h;
+      res[cat].oDara += winningJodiCount * bracket;
+      res[cat].oAkhar += winningAkharCount * bracket;
     }
   }
-  let gTotal=0, gPass=0, gCredit=0;
-  const breakdown={};
+
+  let grandTSale = 0, grandODara = 0, grandOAkhar = 0, grandDebit = 0, grandComm = 0, grandNetBalance = 0;
+  const breakdown = {};
+
   for (const k of CATEGORY_KEYS) {
-    const r=res[k];
-    gTotal+=r.total;
-    gPass+=(r.passing || 0);
-    gCredit+=(r.credit || 0);
-    if (r.total>0) breakdown[k.toUpperCase()]={total:r.total, passing:r.passing, credit:r.credit, jodiCount:r.jodiCount, harufCount:r.harufCount};
+    const r = res[k];
+    if (r.tSale > 0) {
+      r.debit = (r.oDara * jodiMultiplier) + (r.oAkhar * harufMultiplier);
+      r.comm = r.tSale - Math.round(r.tSale * commPercent);
+      r.credit = r.comm - r.debit;
+
+      grandTSale += r.tSale;
+      grandODara += r.oDara;
+      grandOAkhar += r.oAkhar;
+      grandDebit += r.debit;
+      grandComm += r.comm;
+      grandNetBalance += r.credit;
+
+      breakdown[k] = r;
+    }
   }
-  return {grandTotal:gTotal, grandPassing:gPass, grandCredit:gCredit, breakdown};
+
+  return {
+    grandTSale,
+    grandODara,
+    grandOAkhar,
+    grandDebit,
+    grandComm,
+    grandNetBalance,
+    breakdown,
+    rateLabel: `${rateStr}-9/10`
+  };
 }
 
 let canvasModule = null;
@@ -149,26 +319,8 @@ try {
   canvasModule = require('@napi-rs/canvas');
 } catch {}
 
-const SHIFT_NAMES = {
-  FB: 'FARIDABAD',
-  NFB: 'NEW FB',
-  GB: 'GAZIABAAD',
-  ND: 'GALI',
-  PD: 'DESHAWER'
-};
-
-function formatINR(val) {
-  return Number(val || 0).toLocaleString('en-IN');
-}
-
-function formatDateDDMMYYYY(d = new Date()) {
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = d.getFullYear();
-  return `${day}-${month}-${year}`;
-}
-
-function generateReportImageBuffer(data) {
+// Canvas Bill Generator matching screenshot
+function generateExactBillImageWithPassing(data) {
   if (!canvasModule) return null;
   try {
     const { createCanvas } = canvasModule;
@@ -179,61 +331,38 @@ function generateReportImageBuffer(data) {
     const rows = [];
     const breakdown = data.breakdown || {};
     let sr = 1;
-    let totalTSale = 0;
-    let totalODara = 0;
-    let totalOAkhar = 0;
-    let totalDebit = 0;
-    let totalComm = 0;
-    let totalCredit = 0;
 
-    for (const key of ['FB', 'NFB', 'GB', 'ND', 'PD']) {
-      if (breakdown[key] && breakdown[key].total > 0) {
+    for (const key of CATEGORY_KEYS) {
+      if (breakdown[key] && breakdown[key].tSale > 0) {
         const item = breakdown[key];
-        const tSale = item.total || 0;
-        const oDara = item.oDara || 0;
-        const oAkhar = item.oAkhar || 0;
-        const debit = item.debit || 0;
-        const comm = item.credit !== undefined ? item.credit : (tSale - Math.round(tSale * 0.10));
-        const credit = comm - debit;
-
-        totalTSale += tSale;
-        totalODara += oDara;
-        totalOAkhar += oAkhar;
-        totalDebit += debit;
-        totalComm += comm;
-        totalCredit += credit;
+        const shiftName = SHIFT_NAMES[key] || key.toUpperCase();
+        const winNumSuffix = item.winningNumber ? ` (${item.winningNumber})` : '';
 
         rows.push({
           sr: sr++,
-          shift: SHIFT_NAMES[key] || key,
+          shift: `${shiftName}${winNumSuffix}`,
           rate: rateLabel,
-          tSale: tSale,
-          oDara: oDara,
-          oAkhar: oAkhar,
-          debit: debit,
-          comm: comm,
-          credit: credit
+          tSale: item.tSale,
+          oDara: item.oDara,
+          oAkhar: item.oAkhar,
+          debit: item.debit,
+          comm: item.comm,
+          credit: item.credit
         });
       }
     }
 
     if (rows.length === 0) {
-      const tSale = data.grandTotal || 0;
-      const comm = data.grandCredit || (tSale - Math.round(tSale * 0.10));
-      const credit = comm;
-      totalTSale = tSale;
-      totalComm = comm;
-      totalCredit = credit;
       rows.push({
         sr: 1,
         shift: 'FARIDABAD',
         rate: rateLabel,
-        tSale: tSale,
+        tSale: data.grandTSale || 0,
         oDara: 0,
         oAkhar: 0,
         debit: 0,
-        comm: comm,
-        credit: credit
+        comm: data.grandComm || 0,
+        credit: data.grandNetBalance || 0
       });
     }
 
@@ -267,7 +396,7 @@ function generateReportImageBuffer(data) {
     const canvas = createCanvas(canvasWidth, canvasHeight);
     const ctx = canvas.getContext('2d');
 
-    // Outer Background
+    // Background
     ctx.fillStyle = '#1e293b';
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
@@ -388,7 +517,7 @@ function generateReportImageBuffer(data) {
         else if (cIdx === 5) { cellVal = String(r.oAkhar); }
         else if (cIdx === 6) { cellVal = String(r.debit); fontColor = '#dc2626'; isBold = r.debit > 0; }
         else if (cIdx === 7) { cellVal = String(r.comm); isBold = true; }
-        else if (cIdx === 8) { cellVal = String(r.credit); fontColor = '#16a34a'; isBold = true; }
+        else if (cIdx === 8) { cellVal = String(r.credit); fontColor = r.credit >= 0 ? '#16a34a' : '#dc2626'; isBold = true; }
 
         ctx.fillStyle = fontColor;
         ctx.font = isBold ? 'bold 12px "Segoe UI", sans-serif' : '12px "Segoe UI", sans-serif';
@@ -415,12 +544,12 @@ function generateReportImageBuffer(data) {
     curX += mergedColWidth;
 
     const totalCols = [
-      { val: String(totalTSale), color: '#000000', bold: true },
-      { val: String(totalODara), color: '#000000', bold: false },
-      { val: String(totalOAkhar), color: '#000000', bold: false },
-      { val: String(totalDebit), color: '#dc2626', bold: totalDebit > 0 },
-      { val: String(totalComm), color: '#000000', bold: true },
-      { val: String(totalCredit), color: '#16a34a', bold: true }
+      { val: String(data.grandTSale || 0), color: '#000000', bold: true },
+      { val: String(data.grandODara || 0), color: '#000000', bold: false },
+      { val: String(data.grandOAkhar || 0), color: '#000000', bold: false },
+      { val: String(data.grandDebit || 0), color: '#dc2626', bold: (data.grandDebit || 0) > 0 },
+      { val: String(data.grandComm || 0), color: '#000000', bold: true },
+      { val: String(data.grandNetBalance || 0), color: (data.grandNetBalance || 0) >= 0 ? '#16a34a' : '#dc2626', bold: true }
     ];
 
     totalCols.forEach((tCol, idx) => {
@@ -461,10 +590,11 @@ function generateReportImageBuffer(data) {
     ctx.fillRect(tableX + part1Width + part2Width, curRowY, part3Width, footerRowHeight);
     ctx.strokeRect(tableX + part1Width + part2Width, curRowY, part3Width, footerRowHeight);
 
+    const netBal = data.grandNetBalance || 0;
     ctx.fillStyle = '#000000';
     ctx.font = 'bold 13px "Segoe UI", "Nirmala UI", sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillText(`कुल बकाया (Running Total): ₹${formatINR(totalCredit)}`, tableX + tableWidth - 10, curRowY + (footerRowHeight / 2));
+    ctx.fillText(`कुल बकाया (Running Total): ₹${netBal < 0 ? '-' : ''}${Math.abs(netBal).toLocaleString('en-IN')}`, tableX + tableWidth - 10, curRowY + (footerRowHeight / 2));
 
     return canvas.toBuffer('image/png');
   } catch (err) {
@@ -501,8 +631,35 @@ const server = http.createServer(async (req, res) => {
           const senderPhone = (payload.author || payload.senderPhone || payload.phone || from).replace(/\D/g, '');
           const pushName = payload.notifyName || payload.pushname || '';
 
-          // Self messages, groups, channels/newsletters, status broadcasts, or empty text ignore karein
-          if (isFromMe || isGroup || from.includes('@broadcast') || from.includes('@newsletter') || !text || !from) {
+          if (isFromMe || from.includes('@broadcast') || from.includes('@newsletter') || !text || !from) {
+            return;
+          }
+
+          if (isDuplicate(msgId, text, from)) {
+            return;
+          }
+
+          const todayDate = formatDateDDMMYYYY();
+          const timeString = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+
+          // 1. Group Message / Result Detection (Listen for winning numbers like "81 gb", "12 fb", "[14/09...] ...: 12 fb")
+          const detectedResults = parseResultMessage(text);
+          if (detectedResults.length > 0) {
+            let updatedList = [];
+            for (const r of detectedResults) {
+              setResultForShift(todayDate, r.category, r.number);
+              updatedList.push(`${SHIFT_NAMES[r.category]} = ${r.number}`);
+              console.log(`🎯 [RESULT CAPTURED] ${SHIFT_NAMES[r.category]} (${r.category.toUpperCase()}) -> ${r.number} for Date: ${todayDate}`);
+            }
+
+            if (isGroup) {
+              console.log(`📢 [GROUP RESULT SYNCED] ${updatedList.join(', ')}`);
+              return;
+            }
+          }
+
+          // Group non-result messages can be ignored
+          if (isGroup) {
             return;
           }
 
@@ -511,43 +668,42 @@ const server = http.createServer(async (req, res) => {
             return;
           }
 
-          // Duplicate event check (webhook multiple time fire hone par bhi 1 hi baar chalega)
-          if (isDuplicate(msgId, text, from)) {
-            return;
-          }
-
           console.log(`\n========================================`);
           console.log(`📩 Message from +${senderPhone}: "${text}"`);
 
           const userKey = from.replace('@s.whatsapp.net', '@c.us');
-          const timeString = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+          const todayResults = getTodayResults(todayDate);
 
-          // Specific Number (9785260088) -> Direct Instant Forward with TSC Total & Photo Report
+          // Specific Monitored Number (9785260088) -> Direct Instant Passing Calculation & Bill Photo
           if (senderPhone.includes('9785260088')) {
-            console.log(`🎯 Monitored Message from 9785260088 -> Calculating total & sending report...`);
+            console.log(`🎯 Monitored Message from 9785260088 -> Calculating passing & sending bill photo...`);
             
-            const calc = calculateTSCTotal(text);
-            if (calc && calc.grandTotal > 0) {
-              let calcInfo = `\n\n📊 *TSC Passing & Total Report:*\n💰 *Total Sale:* ₹${calc.grandTotal}\n⚡ *Total Passing:* ₹${calc.grandPassing}\n💳 *Net Credit:* ₹${calc.grandCredit}`;
+            const calc = calculatePassingReport(text, todayResults, '90/10');
+            if (calc && calc.grandTSale > 0) {
+              let calcInfo = `\n\n📊 *TSC Passing & Total Report:*\n💰 *Total Sale:* ₹${calc.grandTSale}\n🎯 *Open Dara:* ₹${calc.grandODara}\n⚡ *Debit (Payout):* ₹${calc.grandDebit}\n💵 *Commission (90%):* ₹${calc.grandComm}\n💳 *Net Balance:* ₹${calc.grandNetBalance}`;
               for (const cat in calc.breakdown) {
                 const b = calc.breakdown[cat];
-                calcInfo += `\n📍 *${cat}:* ₹${b.total} (${b.jodiCount} Jodi${b.harufCount ? `, ${b.harufCount} H` : ''}) | Pass: ₹${b.passing}`;
+                const winSuffix = b.winningNumber ? ` [Open: *${b.winningNumber}*]` : '';
+                calcInfo += `\n📍 *${SHIFT_NAMES[cat] || cat.toUpperCase()}${winSuffix}:* Sale ₹${b.tSale} | Debit ₹${b.debit} | Net ₹${b.credit}`;
               }
 
               const caption = `📩 *New Message from 9785260088:*\n\n${text}${calcInfo}\n\n⏰ *Time:* ${timeString}`;
-              const imgBuf = generateReportImageBuffer({
-                rawMessage: text,
-                sender: senderPhone,
-                time: timeString,
-                grandTotal: calc.grandTotal,
-                grandPassing: calc.grandPassing,
-                grandCredit: calc.grandCredit,
+              const imgBuf = generateExactBillImageWithPassing({
+                date: todayDate,
+                userName: 'DEFAULT',
+                rateLabel: calc.rateLabel,
+                grandTSale: calc.grandTSale,
+                grandODara: calc.grandODara,
+                grandOAkhar: calc.grandOAkhar,
+                grandDebit: calc.grandDebit,
+                grandComm: calc.grandComm,
+                grandNetBalance: calc.grandNetBalance,
                 breakdown: calc.breakdown
               });
 
               if (imgBuf) {
                 await sendImage(sessionId, TARGET_PHONE, imgBuf, caption);
-                console.log(`🖼️ Report Photo + Details forwarded to ${TARGET_PHONE}`);
+                console.log(`🖼️ Bill Photo + Details forwarded to ${TARGET_PHONE}`);
               } else {
                 await sendMessage(sessionId, TARGET_PHONE, caption);
               }
@@ -571,11 +727,8 @@ const server = http.createServer(async (req, res) => {
             saveStates();
 
             console.log(`🤖 Asking name from +${senderPhone}...`);
-
-            // Saamne wale ko auto-reply
             await sendMessage(sessionId, userKey, `Namaste! 🙏\nKripya apna shubh *Naam (Name)* batayein?`);
 
-            // Aapke number (8005844014) par alert
             const initialAlert = `🔔 *Naya WhatsApp Message Aaya!*\n📱 *Number:* +${senderPhone}\n💬 *Message:* ${text}\n⏰ *Time:* ${timeString}\n⏳ *Status:* Naam poochha gaya hai...`;
             await sendMessage(sessionId, TARGET_PHONE, initialAlert);
           }
@@ -587,11 +740,8 @@ const server = http.createServer(async (req, res) => {
             saveStates();
 
             console.log(`👤 Name saved: "${userName}" (+${senderPhone})`);
-
-            // Saamne wale ko "Ok" reply
             await sendMessage(sessionId, userKey, `Ok`);
 
-            // Aapke number par complete lead forward karein
             const leadAlert = `✅ *Nayi Contact Detail Mil Gayi!*\n\n👤 *Naam:* ${userName}\n📱 *Phone:* +${senderPhone}\n💬 *First Message:* ${userStates[userKey].firstMsg}\n⏰ *Time:* ${timeString}`;
             await sendMessage(sessionId, TARGET_PHONE, leadAlert);
             console.log(`🚀 Details sent to ${TARGET_PHONE}`);
@@ -599,36 +749,35 @@ const server = http.createServer(async (req, res) => {
           // Step 3: Saamne wale ka HAR agla message -> Use "Ok" reply karein aur aapko forward karein
           else if (userStates[userKey].stage === 'registered') {
             const userName = userStates[userKey].name || pushName || senderPhone;
-
-            // 1. Saamne wale ko har message par "Ok" bhejega
             await sendMessage(sessionId, userKey, `Ok`);
             console.log(`🤖 Sent "Ok" to ${userName}`);
 
-            // 2. Aapke number par message forward karein
-            let calcInfo = '';
-            // 2. Aapke number par message forward karein
-            const calc = calculateTSCTotal(text);
-            if (calc && calc.grandTotal > 0) {
-              let calcInfo = `\n\n📊 *TSC Passing & Total Report:*\n💰 *Total Sale:* ₹${calc.grandTotal}\n⚡ *Total Passing:* ₹${calc.grandPassing}\n💳 *Net Credit:* ₹${calc.grandCredit}`;
+            const calc = calculatePassingReport(text, todayResults, '90/10');
+            if (calc && calc.grandTSale > 0) {
+              let calcInfo = `\n\n📊 *TSC Passing & Total Report:*\n💰 *Total Sale:* ₹${calc.grandTSale}\n🎯 *Open Dara:* ₹${calc.grandODara}\n⚡ *Debit (Payout):* ₹${calc.grandDebit}\n💵 *Commission (90%):* ₹${calc.grandComm}\n💳 *Net Balance:* ₹${calc.grandNetBalance}`;
               for (const cat in calc.breakdown) {
                 const b = calc.breakdown[cat];
-                calcInfo += `\n📍 *${cat}:* ₹${b.total} (${b.jodiCount} Jodi${b.harufCount ? `, ${b.harufCount} H` : ''}) | Pass: ₹${b.passing}`;
+                const winSuffix = b.winningNumber ? ` [Open: *${b.winningNumber}*]` : '';
+                calcInfo += `\n📍 *${SHIFT_NAMES[cat] || cat.toUpperCase()}${winSuffix}:* Sale ₹${b.tSale} | Debit ₹${b.debit} | Net ₹${b.credit}`;
               }
 
               const followUpAlert = `💬 *Message from ${userName}* (+${senderPhone}):\n${text}${calcInfo}`;
-              const imgBuf = generateReportImageBuffer({
-                rawMessage: text,
-                sender: senderPhone,
-                time: timeString,
-                grandTotal: calc.grandTotal,
-                grandPassing: calc.grandPassing,
-                grandCredit: calc.grandCredit,
+              const imgBuf = generateExactBillImageWithPassing({
+                date: todayDate,
+                userName: userName || 'DEFAULT',
+                rateLabel: calc.rateLabel,
+                grandTSale: calc.grandTSale,
+                grandODara: calc.grandODara,
+                grandOAkhar: calc.grandOAkhar,
+                grandDebit: calc.grandDebit,
+                grandComm: calc.grandComm,
+                grandNetBalance: calc.grandNetBalance,
                 breakdown: calc.breakdown
               });
 
               if (imgBuf) {
                 await sendImage(sessionId, TARGET_PHONE, imgBuf, followUpAlert);
-                console.log(`🖼️ Forwarded Report Photo to ${TARGET_PHONE}`);
+                console.log(`🖼️ Forwarded Bill Photo to ${TARGET_PHONE}`);
               } else {
                 await sendMessage(sessionId, TARGET_PHONE, followUpAlert);
               }
@@ -732,14 +881,31 @@ async function sendMessage(sessionId, chatId, messageText) {
   }
 }
 
+async function tryJoinResultGroup(sessionId) {
+  try {
+    const res = await fetch(`${OPENWA_API_URL}/api/sessions/${sessionId}/groups/join`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Key': OPENWA_API_KEY
+      },
+      body: JSON.stringify({ inviteCode: GROUP_INVITE_CODE })
+    });
+    if (res.ok) {
+      console.log(`✅ Successfully joined Result WhatsApp Group (${GROUP_INVITE_CODE})!`);
+    }
+  } catch {}
+}
+
 server.listen(PORT, () => {
   console.log(`\n======================================================`);
-  console.log(`🤖 OpenWA Smart Bot: Ask Name -> Auto "Ok" Reply -> Forward to 8005844014`);
+  console.log(`🤖 TSC Passing & Auto-Forwarder Service LIVE`);
   console.log(`📍 Webhook:           http://localhost:${PORT}/webhook`);
   console.log(`📤 Destination Phone: ${TARGET_PHONE}`);
+  console.log(`🎯 Monitored Source:  9785260088`);
+  console.log(`📊 Result Group Code: ${GROUP_INVITE_CODE}`);
   console.log(`======================================================\n`);
 
-  // Auto-register webhook with OpenWA sessions
   async function autoRegisterWebhooks() {
     try {
       const sRes = await fetch(`${OPENWA_API_URL}/api/sessions`, {
@@ -751,6 +917,8 @@ server.listen(PORT, () => {
 
       for (const session of sessions) {
         if (session.status === 'ready' || session.status === 'authenticated') {
+          tryJoinResultGroup(session.id);
+
           const wRes = await fetch(`${OPENWA_API_URL}/api/sessions/${session.id}/webhooks`, {
             headers: { 'X-Api-Key': OPENWA_API_KEY },
           });
@@ -778,6 +946,6 @@ server.listen(PORT, () => {
     } catch {}
   }
 
-  setInterval(autoRegisterWebhooks, 5000);
+  setInterval(autoRegisterWebhooks, 10000);
   setTimeout(autoRegisterWebhooks, 3000);
 });
