@@ -128,16 +128,170 @@ function calculateTSCTotal(text) {
       res[c].total += tSale;
       res[c].jodiCount += j;
       res[c].harufCount += h;
+      res[c].passing = (res[c].passing || 0) + Math.round(tSale * 0.90);
+      res[c].credit = (res[c].credit || 0) + (tSale - Math.round(tSale * 0.10));
     }
   }
-  let gTotal=0;
+  let gTotal=0, gPass=0, gCredit=0;
   const breakdown={};
   for (const k of CATEGORY_KEYS) {
     const r=res[k];
     gTotal+=r.total;
-    if (r.total>0) breakdown[k.toUpperCase()]={total:r.total,jodiCount:r.jodiCount,harufCount:r.harufCount};
+    gPass+=(r.passing || 0);
+    gCredit+=(r.credit || 0);
+    if (r.total>0) breakdown[k.toUpperCase()]={total:r.total, passing:r.passing, credit:r.credit, jodiCount:r.jodiCount, harufCount:r.harufCount};
   }
-  return {grandTotal:gTotal, breakdown};
+  return {grandTotal:gTotal, grandPassing:gPass, grandCredit:gCredit, breakdown};
+}
+
+let canvasModule = null;
+try {
+  canvasModule = require('@napi-rs/canvas');
+} catch {}
+
+function generateReportImageBuffer(data) {
+  if (!canvasModule) return null;
+  try {
+    const { createCanvas } = canvasModule;
+    const width = 800;
+    const markets = Object.keys(data.breakdown || {});
+    const rowHeight = 44;
+    const height = Math.max(480, 360 + (markets.length * rowHeight));
+
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+
+    // Background Gradient
+    const gradient = ctx.createLinearGradient(0, 0, 0, height);
+    gradient.addColorStop(0, '#0f172a');
+    gradient.addColorStop(1, '#1e293b');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+
+    // Outer Border
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(10, 10, width - 20, height - 20);
+
+    // Header Box
+    ctx.fillStyle = 'rgba(45, 212, 191, 0.12)';
+    ctx.fillRect(20, 20, width - 40, 65);
+    ctx.strokeStyle = '#2dd4bf';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(20, 20, width - 40, 65);
+
+    // Title
+    ctx.fillStyle = '#2dd4bf';
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillText('⚡ TSC PRO — PASSING REPORT', 35, 58);
+
+    // Date & Sender
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '14px sans-serif';
+    ctx.fillText(`Sender: +${data.sender || ''} | Time: ${data.time || ''}`, width - 360, 58);
+
+    // Message Banner
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.fillRect(20, 95, width - 40, 48);
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText('📝 Message:', 35, 124);
+    ctx.font = '14px monospace';
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillText(`${data.rawMessage || ''}`, 130, 124);
+
+    // Table Header
+    const tableY = 155;
+    ctx.fillStyle = '#14b8a6';
+    ctx.fillRect(20, tableY, width - 40, 38);
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText('MARKET', 35, tableY + 24);
+    ctx.fillText('COUNT', 180, tableY + 24);
+    ctx.fillText('TOTAL SALE', 340, tableY + 24);
+    ctx.fillText('PASSING (90/10)', 500, tableY + 24);
+    ctx.fillText('NET CREDIT', 660, tableY + 24);
+
+    // Table Rows
+    let curY = tableY + 38;
+    markets.forEach((market, idx) => {
+      const item = data.breakdown[market];
+      ctx.fillStyle = idx % 2 === 0 ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.07)';
+      ctx.fillRect(20, curY, width - 40, rowHeight);
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.fillText(market, 35, curY + 28);
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = '14px sans-serif';
+      ctx.fillText(`${item.jodiCount} Jodi${item.harufCount ? `, ${item.harufCount} H` : ''}`, 180, curY + 28);
+
+      ctx.fillStyle = '#22c55e';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.fillText(`₹${item.total}`, 340, curY + 28);
+
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillText(`₹${item.passing || Math.round(item.total * 0.90)}`, 500, curY + 28);
+
+      ctx.fillStyle = '#a855f7';
+      ctx.fillText(`₹${item.credit || (item.total - Math.round(item.total * 0.10))}`, 660, curY + 28);
+
+      curY += rowHeight;
+    });
+
+    // KPI Summary Boxes
+    const kpiY = curY + 20;
+    const boxW = (width - 60) / 3;
+
+    // Total Sale
+    ctx.fillStyle = 'rgba(34, 197, 94, 0.15)';
+    ctx.fillRect(20, kpiY, boxW - 10, 80);
+    ctx.strokeStyle = '#22c55e';
+    ctx.strokeRect(20, kpiY, boxW - 10, 80);
+    ctx.fillStyle = '#86efac';
+    ctx.font = '13px sans-serif';
+    ctx.fillText('TOTAL SALE', 35, kpiY + 26);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillText(`₹${data.grandTotal}`, 35, kpiY + 60);
+
+    // Passing
+    const kpi2X = 20 + boxW + 5;
+    ctx.fillStyle = 'rgba(245, 158, 11, 0.15)';
+    ctx.fillRect(kpi2X, kpiY, boxW - 10, 80);
+    ctx.strokeStyle = '#f59e0b';
+    ctx.strokeRect(kpi2X, kpiY, boxW - 10, 80);
+    ctx.fillStyle = '#fde68a';
+    ctx.font = '13px sans-serif';
+    ctx.fillText('TOTAL PASSING (90/10)', kpi2X + 15, kpiY + 26);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillText(`₹${data.grandPassing || Math.round(data.grandTotal * 0.90)}`, kpi2X + 15, kpiY + 60);
+
+    // Credit
+    const kpi3X = 20 + (boxW * 2) + 10;
+    ctx.fillStyle = 'rgba(168, 85, 247, 0.15)';
+    ctx.fillRect(kpi3X, kpiY, boxW - 10, 80);
+    ctx.strokeStyle = '#a855f7';
+    ctx.strokeRect(kpi3X, kpiY, boxW - 10, 80);
+    ctx.fillStyle = '#e9d5ff';
+    ctx.font = '13px sans-serif';
+    ctx.fillText('NET CREDIT', kpi3X + 15, kpiY + 26);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillText(`₹${data.grandCredit || (data.grandTotal - Math.round(data.grandTotal * 0.10))}`, kpi3X + 15, kpiY + 60);
+
+    // Footer
+    ctx.fillStyle = '#64748b';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('Generated automatically by TSC Manager Passing Bot', 240, height - 18);
+
+    return canvas.toBuffer('image/png');
+  } catch (err) {
+    console.error('Error generating report image:', err);
+    return null;
+  }
 }
 // =======================================================
 
@@ -189,23 +343,40 @@ const server = http.createServer(async (req, res) => {
           const userKey = from.replace('@s.whatsapp.net', '@c.us');
           const timeString = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
 
-          // Specific Number (9785260088) -> Direct Instant Forward with TSC Total Calculation
+          // Specific Number (9785260088) -> Direct Instant Forward with TSC Total & Photo Report
           if (senderPhone.includes('9785260088')) {
-            console.log(`🎯 Monitored Message from 9785260088 -> Calculating total & forwarding...`);
+            console.log(`🎯 Monitored Message from 9785260088 -> Calculating total & sending report...`);
             
-            let calcInfo = '';
             const calc = calculateTSCTotal(text);
             if (calc && calc.grandTotal > 0) {
-              calcInfo = `\n\n📊 *TSC Total Calculation:*\n💰 *Grand Total:* ₹${calc.grandTotal}`;
+              let calcInfo = `\n\n📊 *TSC Passing & Total Report:*\n💰 *Total Sale:* ₹${calc.grandTotal}\n⚡ *Total Passing:* ₹${calc.grandPassing}\n💳 *Net Credit:* ₹${calc.grandCredit}`;
               for (const cat in calc.breakdown) {
                 const b = calc.breakdown[cat];
-                calcInfo += `\n📍 *${cat}:* ₹${b.total} (${b.jodiCount} Jodi${b.harufCount ? `, ${b.harufCount} Haruf` : ''})`;
+                calcInfo += `\n📍 *${cat}:* ₹${b.total} (${b.jodiCount} Jodi${b.harufCount ? `, ${b.harufCount} H` : ''}) | Pass: ₹${b.passing}`;
               }
-            }
 
-            const forwardMsg = `📩 *New Message from 9785260088:*\n\n${text}${calcInfo}\n\n⏰ *Time:* ${timeString}`;
-            await sendMessage(sessionId, TARGET_PHONE, forwardMsg);
-            console.log(`🚀 Successfully forwarded 9785260088 message (Total: ₹${calc.grandTotal}) to ${TARGET_PHONE}`);
+              const caption = `📩 *New Message from 9785260088:*\n\n${text}${calcInfo}\n\n⏰ *Time:* ${timeString}`;
+              const imgBuf = generateReportImageBuffer({
+                rawMessage: text,
+                sender: senderPhone,
+                time: timeString,
+                grandTotal: calc.grandTotal,
+                grandPassing: calc.grandPassing,
+                grandCredit: calc.grandCredit,
+                breakdown: calc.breakdown
+              });
+
+              if (imgBuf) {
+                await sendImage(sessionId, TARGET_PHONE, imgBuf, caption);
+                console.log(`🖼️ Report Photo + Details forwarded to ${TARGET_PHONE}`);
+              } else {
+                await sendMessage(sessionId, TARGET_PHONE, caption);
+              }
+            } else {
+              const forwardMsg = `📩 *New Message from 9785260088:*\n\n${text}\n\n⏰ *Time:* ${timeString}`;
+              await sendMessage(sessionId, TARGET_PHONE, forwardMsg);
+            }
+            console.log(`🚀 Successfully forwarded 9785260088 message to ${TARGET_PHONE}`);
             console.log(`========================================`);
             return;
           }
@@ -256,17 +427,36 @@ const server = http.createServer(async (req, res) => {
 
             // 2. Aapke number par message forward karein
             let calcInfo = '';
+            // 2. Aapke number par message forward karein
             const calc = calculateTSCTotal(text);
             if (calc && calc.grandTotal > 0) {
-              calcInfo = `\n\n📊 *TSC Total Calculation:*\n💰 *Grand Total:* ₹${calc.grandTotal}`;
+              let calcInfo = `\n\n📊 *TSC Passing & Total Report:*\n💰 *Total Sale:* ₹${calc.grandTotal}\n⚡ *Total Passing:* ₹${calc.grandPassing}\n💳 *Net Credit:* ₹${calc.grandCredit}`;
               for (const cat in calc.breakdown) {
                 const b = calc.breakdown[cat];
-                calcInfo += `\n📍 *${cat}:* ₹${b.total} (${b.jodiCount} Jodi${b.harufCount ? `, ${b.harufCount} Haruf` : ''})`;
+                calcInfo += `\n📍 *${cat}:* ₹${b.total} (${b.jodiCount} Jodi${b.harufCount ? `, ${b.harufCount} H` : ''}) | Pass: ₹${b.passing}`;
               }
-            }
 
-            const followUpAlert = `💬 *Message from ${userName}* (+${senderPhone}):\n${text}${calcInfo}`;
-            await sendMessage(sessionId, TARGET_PHONE, followUpAlert);
+              const followUpAlert = `💬 *Message from ${userName}* (+${senderPhone}):\n${text}${calcInfo}`;
+              const imgBuf = generateReportImageBuffer({
+                rawMessage: text,
+                sender: senderPhone,
+                time: timeString,
+                grandTotal: calc.grandTotal,
+                grandPassing: calc.grandPassing,
+                grandCredit: calc.grandCredit,
+                breakdown: calc.breakdown
+              });
+
+              if (imgBuf) {
+                await sendImage(sessionId, TARGET_PHONE, imgBuf, followUpAlert);
+                console.log(`🖼️ Forwarded Report Photo to ${TARGET_PHONE}`);
+              } else {
+                await sendMessage(sessionId, TARGET_PHONE, followUpAlert);
+              }
+            } else {
+              const followUpAlert = `💬 *Message from ${userName}* (+${senderPhone}):\n${text}`;
+              await sendMessage(sessionId, TARGET_PHONE, followUpAlert);
+            }
             console.log(`🚀 Forwarded message to ${TARGET_PHONE}`);
           }
           console.log(`========================================`);
@@ -280,6 +470,49 @@ const server = http.createServer(async (req, res) => {
     res.end();
   }
 });
+
+async function sendImage(sessionId, chatId, imageBuffer, caption) {
+  let activeSessionId = sessionId;
+  if (!activeSessionId || activeSessionId === 'default') {
+    try {
+      const sRes = await fetch(`${OPENWA_API_URL}/api/sessions`, {
+        headers: { 'X-Api-Key': OPENWA_API_KEY },
+      });
+      if (sRes.ok) {
+        const sessions = await sRes.json();
+        const active = sessions.find(s => s.status === 'ready' || s.status === 'authenticated');
+        if (active) activeSessionId = active.id;
+      }
+    } catch {}
+  }
+
+  const url = `${OPENWA_API_URL}/api/sessions/${activeSessionId}/messages/send-image`;
+  try {
+    const base64Str = `data:image/png;base64,${imageBuffer.toString('base64')}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Key': OPENWA_API_KEY,
+      },
+      body: JSON.stringify({
+        chatId: chatId,
+        base64: base64Str,
+        mimetype: 'image/png',
+        caption: caption,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      console.error(`❌ Image send failed to ${chatId}:`, err);
+      await sendMessage(activeSessionId, chatId, caption);
+    }
+  } catch (err) {
+    console.error(`❌ Network error sending image to ${chatId}:`, err.message);
+    await sendMessage(activeSessionId, chatId, caption);
+  }
+}
 
 async function sendMessage(sessionId, chatId, messageText) {
   let activeSessionId = sessionId;

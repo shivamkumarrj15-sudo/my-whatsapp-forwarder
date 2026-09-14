@@ -72,6 +72,7 @@
     "@bull-board/express": "^9.8.0",
     "@bull-board/nestjs": "^9.8.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@napi-rs/canvas": "^1.0.9",
     "@nestjs/bullmq": "^11.0.5",
     "@nestjs/common": "^11.2.3",
     "@nestjs/config": "^4.0.2",
