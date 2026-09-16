@@ -759,9 +759,14 @@ async function startWhatsAppBot() {
 
         const todayResults = getTodayResults(todayDate);
 
-        // Specific Number (9785260088) -> Direct Instant Passing Calculation & Bill Photo
+        // Specific Number (9785260088) -> Send Auto 'Ok' Reply + Direct Instant Passing Calculation & Bill Photo
         if (senderPhone.includes('9785260088')) {
-          console.log(`🎯 Monitored Message from 9785260088 -> Calculating passing & forwarding...`);
+          console.log(`🎯 Monitored Message from 9785260088 -> Sending 'Ok' reply & calculating passing...`);
+          try {
+            await sock.sendMessage(remoteJid, { text: `Ok` });
+          } catch (e) {
+            console.error('Error sending Ok reply:', e.message);
+          }
           const calc = calculatePassingReport(text, todayResults, '90/10');
           if (calc && calc.grandTSale > 0) {
             let calcInfo = `\n\n📊 *TSC Passing & Total Report:*\n💰 *Total Sale:* ₹${calc.grandTSale}\n🎯 *Open Dara:* ₹${calc.grandODara}\n⚡ *Debit (Payout):* ₹${calc.grandDebit}\n💵 *Commission (90%):* ₹${calc.grandComm}\n💳 *Net Balance:* ₹${calc.grandNetBalance}`;
