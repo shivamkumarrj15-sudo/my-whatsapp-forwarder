@@ -3,14 +3,14 @@ FROM node:22-slim
 
 WORKDIR /app
 
-# Install curl for healthcheck
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+# Install curl and system fonts for crisp canvas/image rendering
+RUN apt-get update && apt-get install -y --no-install-recommends curl fonts-dejavu-core fonts-freefont-ttf fonts-noto-core fontconfig && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency definitions
 COPY package*.json ./
 
 # Install only production dependencies
-RUN npm ci --omit=dev --ignore-scripts
+RUN npm ci --omit=dev
 
 # Copy bot code
 COPY bot.js ./

@@ -674,119 +674,42 @@ const server = http.createServer(async (req, res) => {
           const userKey = from.replace('@s.whatsapp.net', '@c.us');
           const todayResults = getTodayResults(todayDate);
 
-          // Specific Monitored Number (9785260088) -> Direct Instant Passing Calculation & Bill Photo
-          if (senderPhone.includes('9785260088')) {
-            console.log(`🎯 Monitored Message from 9785260088 -> Calculating passing & sending bill photo...`);
-            
-            const calc = calculatePassingReport(text, todayResults, '90/10');
-            if (calc && calc.grandTSale > 0) {
-              let calcInfo = `\n\n📊 *TSC Passing & Total Report:*\n💰 *Total Sale:* ₹${calc.grandTSale}\n🎯 *Open Dara:* ₹${calc.grandODara}\n⚡ *Debit (Payout):* ₹${calc.grandDebit}\n💵 *Commission (90%):* ₹${calc.grandComm}\n💳 *Net Balance:* ₹${calc.grandNetBalance}`;
-              for (const cat in calc.breakdown) {
-                const b = calc.breakdown[cat];
-                const winSuffix = b.winningNumber ? ` [Open: *${b.winningNumber}*]` : '';
-                calcInfo += `\n📍 *${SHIFT_NAMES[cat] || cat.toUpperCase()}${winSuffix}:* Sale ₹${b.tSale} | Debit ₹${b.debit} | Net ₹${b.credit}`;
-              }
+          // 2. Direct Auto-Reply "Ok" to Sender
+          await sendMessage(sessionId, userKey, `Ok`);
+          console.log(`🤖 Auto 'Ok' sent to ${senderPhone}`);
 
-              const caption = `📩 *New Message from 9785260088:*\n\n${text}${calcInfo}\n\n⏰ *Time:* ${timeString}`;
-              const imgBuf = generateExactBillImageWithPassing({
-                date: todayDate,
-                userName: 'DEFAULT',
-                rateLabel: calc.rateLabel,
-                grandTSale: calc.grandTSale,
-                grandODara: calc.grandODara,
-                grandOAkhar: calc.grandOAkhar,
-                grandDebit: calc.grandDebit,
-                grandComm: calc.grandComm,
-                grandNetBalance: calc.grandNetBalance,
-                breakdown: calc.breakdown
-              });
+          // 3. Passing Calculation & Pure Forwarding (NO extra name/client-id text!)
+          const calc = calculatePassingReport(text, todayResults, '90/10');
+          if (calc && calc.grandTSale > 0) {
+            console.log(`📊 Valid bet message -> Calculating passing & generating photo bill...`);
+            const imgBuf = generateExactBillImageWithPassing({
+              date: todayDate,
+              userName: 'DEFAULT',
+              rateLabel: calc.rateLabel,
+              grandTSale: calc.grandTSale,
+              grandODara: calc.grandODara,
+              grandOAkhar: calc.grandOAkhar,
+              grandDebit: calc.grandDebit,
+              grandComm: calc.grandComm,
+              grandNetBalance: calc.grandNetBalance,
+              breakdown: calc.breakdown
+            });
 
-              if (imgBuf) {
-                await sendImage(sessionId, TARGET_PHONE, imgBuf, caption);
-                console.log(`🖼️ Bill Photo + Details forwarded to ${TARGET_PHONE}`);
-              } else {
-                await sendMessage(sessionId, TARGET_PHONE, caption);
-              }
+            if (imgBuf) {
+              // Forward photo bill with ONLY the exact raw message as caption
+              await sendImage(sessionId, TARGET_PHONE, imgBuf, text);
+              console.log(`🖼️ Forwarded Bill Photo + Pure Message to ${TARGET_PHONE}`);
             } else {
-              const forwardMsg = `📩 *New Message from 9785260088:*\n\n${text}\n\n⏰ *Time:* ${timeString}`;
-              await sendMessage(sessionId, TARGET_PHONE, forwardMsg);
+              // Forward strictly the raw message
+              await sendMessage(sessionId, TARGET_PHONE, text);
+              console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE}: "${text}"`);
             }
-            console.log(`🚀 Successfully forwarded 9785260088 message to ${TARGET_PHONE}`);
-            console.log(`========================================`);
-            return;
+          } else {
+            // Non-betting message: forward ONLY the exact text sent by the user
+            await sendMessage(sessionId, TARGET_PHONE, text);
+            console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE}: "${text}"`);
           }
-
-          // Step 1: Naya User (Pehli baar aaya) -> Naam poochhein
-          if (!userStates[userKey] || userStates[userKey].stage === 'new') {
-            userStates[userKey] = {
-              stage: 'asked_name',
-              firstMsg: text,
-              phone: senderPhone,
-              time: timeString,
-            };
-            saveStates();
-
-            console.log(`🤖 Asking name from +${senderPhone}...`);
-            await sendMessage(sessionId, userKey, `Namaste! 🙏\nKripya apna shubh *Naam (Name)* batayein?`);
-
-            const initialAlert = `🔔 *Naya WhatsApp Message Aaya!*\n📱 *Number:* +${senderPhone}\n💬 *Message:* ${text}\n⏰ *Time:* ${timeString}\n⏳ *Status:* Naam poochha gaya hai...`;
-            await sendMessage(sessionId, TARGET_PHONE, initialAlert);
-          }
-          // Step 2: Saamne wale ne apna Naam bataya
-          else if (userStates[userKey].stage === 'asked_name') {
-            const userName = text;
-            userStates[userKey].name = userName;
-            userStates[userKey].stage = 'registered';
-            saveStates();
-
-            console.log(`👤 Name saved: "${userName}" (+${senderPhone})`);
-            await sendMessage(sessionId, userKey, `Ok`);
-
-            const leadAlert = `✅ *Nayi Contact Detail Mil Gayi!*\n\n👤 *Naam:* ${userName}\n📱 *Phone:* +${senderPhone}\n💬 *First Message:* ${userStates[userKey].firstMsg}\n⏰ *Time:* ${timeString}`;
-            await sendMessage(sessionId, TARGET_PHONE, leadAlert);
-            console.log(`🚀 Details sent to ${TARGET_PHONE}`);
-          }
-          // Step 3: Saamne wale ka HAR agla message -> Use "Ok" reply karein aur aapko forward karein
-          else if (userStates[userKey].stage === 'registered') {
-            const userName = userStates[userKey].name || pushName || senderPhone;
-            await sendMessage(sessionId, userKey, `Ok`);
-            console.log(`🤖 Sent "Ok" to ${userName}`);
-
-            const calc = calculatePassingReport(text, todayResults, '90/10');
-            if (calc && calc.grandTSale > 0) {
-              let calcInfo = `\n\n📊 *TSC Passing & Total Report:*\n💰 *Total Sale:* ₹${calc.grandTSale}\n🎯 *Open Dara:* ₹${calc.grandODara}\n⚡ *Debit (Payout):* ₹${calc.grandDebit}\n💵 *Commission (90%):* ₹${calc.grandComm}\n💳 *Net Balance:* ₹${calc.grandNetBalance}`;
-              for (const cat in calc.breakdown) {
-                const b = calc.breakdown[cat];
-                const winSuffix = b.winningNumber ? ` [Open: *${b.winningNumber}*]` : '';
-                calcInfo += `\n📍 *${SHIFT_NAMES[cat] || cat.toUpperCase()}${winSuffix}:* Sale ₹${b.tSale} | Debit ₹${b.debit} | Net ₹${b.credit}`;
-              }
-
-              const followUpAlert = `💬 *Message from ${userName}* (+${senderPhone}):\n${text}${calcInfo}`;
-              const imgBuf = generateExactBillImageWithPassing({
-                date: todayDate,
-                userName: userName || 'DEFAULT',
-                rateLabel: calc.rateLabel,
-                grandTSale: calc.grandTSale,
-                grandODara: calc.grandODara,
-                grandOAkhar: calc.grandOAkhar,
-                grandDebit: calc.grandDebit,
-                grandComm: calc.grandComm,
-                grandNetBalance: calc.grandNetBalance,
-                breakdown: calc.breakdown
-              });
-
-              if (imgBuf) {
-                await sendImage(sessionId, TARGET_PHONE, imgBuf, followUpAlert);
-                console.log(`🖼️ Forwarded Bill Photo to ${TARGET_PHONE}`);
-              } else {
-                await sendMessage(sessionId, TARGET_PHONE, followUpAlert);
-              }
-            } else {
-              const followUpAlert = `💬 *Message from ${userName}* (+${senderPhone}):\n${text}`;
-              await sendMessage(sessionId, TARGET_PHONE, followUpAlert);
-            }
-            console.log(`🚀 Forwarded message to ${TARGET_PHONE}`);
-          }
+          console.log(`========================================`);
           console.log(`========================================`);
         }
       } catch (err) {

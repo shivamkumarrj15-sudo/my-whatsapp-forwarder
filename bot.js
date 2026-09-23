@@ -177,57 +177,110 @@ function parseResultMessage(text) {
   return results;
 }
 
-// Bet Row Parser
+// Robust Bet Row Parser
 function parseTSCRow(raw, inherited) {
   const entries = [];
   if (!raw || !raw.trim()) return entries;
   let row = raw.trim();
 
-  row = row.replace(/^\[[^\]]+\]\s*[^:]*:\s*/,'').trim();
+  // Strip WhatsApp forwarding / timestamp prefixes
+  row = row.replace(/^\[[^\]]+\]\s*[^:]*:\s*/, '').trim();
 
-  let cat = null, alias = '';
-  const s = row.toLowerCase().replace(/[\s\.\*#:,-@"]/g,'');
-  for (const k in CATEGORIES_MAP) {
+  // Normalize delimiters & common amount patterns into (amount)
+  let normalized = row
+    .replace(/(?:into|int|in|x|\*|=|-|\/)\s*(\d{1,6})/gi, ' ($1) ')
+    .replace(/[\[\{]/g, '(')
+    .replace(/[\]\}]/g, ')')
+    .replace(/["']/g, ' ')
+    .trim();
+
+  // Find all category occurrences
+  const catMatches = [];
+  for (const k of CATEGORY_KEYS) {
     for (const a of CATEGORIES_MAP[k]) {
-      if (s.includes(a.replace(/\./g,''))) { cat=k; alias=a; break; }
+      const rx = new RegExp('\\b' + a.replace(/\./g, '\\.?') + '\\b', 'gi');
+      let m;
+      while ((m = rx.exec(normalized)) !== null) {
+        catMatches.push({ index: m.index, endIndex: m.index + m[0].length, cat: k, alias: m[0] });
+      }
     }
-    if (cat) break;
   }
-  if (!cat) cat = inherited;
-  if (!cat) return entries;
 
-  const isDbl = /\b(ab|abc)\b/i.test(row);
-  let area = row;
-  if (alias) area = area.replace(new RegExp(alias,'gi'),' ');
-  area = area.replace(/[\[\{]/g,'(').replace(/[\}\]]/g,')').replace(/["']/g,' ').trim();
-  const parts = area.split(/(\(\d+\))/).map(p=>p.trim()).filter(p=>p.length>0);
+  catMatches.sort((a, b) => a.index - b.index);
 
-  for (let i=0; i<parts.length; i++) {
-    const na = parts[i];
-    if (na.startsWith('(') && na.endsWith(')')) continue;
-    const bp = parts[i+1];
-    let bv = 1;
-    if (bp && bp.startsWith('(') && bp.endsWith(')')) { 
-      bv = parseInt(bp.slice(1,-1),10)||1; 
-      i++; 
+  let segments = [];
+  if (catMatches.length === 0) {
+    if (inherited) segments.push({ text: normalized, cat: inherited, alias: '' });
+  } else if (catMatches.length === 1) {
+    segments.push({ text: normalized, cat: catMatches[0].cat, alias: catMatches[0].alias });
+  } else {
+    const hasDigitsBeforeFirstCat = /\d/.test(normalized.substring(0, catMatches[0].index));
+    let prevCut = 0;
+    if (hasDigitsBeforeFirstCat) {
+      for (let i = 0; i < catMatches.length; i++) {
+        const cur = catMatches[i];
+        const cutEnd = (i === catMatches.length - 1) ? normalized.length : cur.endIndex;
+        const segText = normalized.substring(prevCut, cutEnd);
+        segments.push({ text: segText, cat: cur.cat, alias: cur.alias });
+        prevCut = cur.endIndex;
+      }
+    } else {
+      for (let i = 0; i < catMatches.length; i++) {
+        const cur = catMatches[i];
+        const cutEnd = (i + 1 < catMatches.length) ? catMatches[i + 1].index : normalized.length;
+        const segText = normalized.substring(cur.index, cutEnd);
+        segments.push({ text: segText, cat: cur.cat, alias: cur.alias });
+      }
     }
-    const nums = [];
-    const rRx = /(\d{1,2})\s*[^\w\d]*to[^\w\d]*\s*(\d{1,2})/gi;
-    let rm2;
-    while ((rm2=rRx.exec(na))!==null) {
-      const [,a,b] = rm2;
-      const sa=parseInt(a,10),eb=parseInt(b,10);
-      if (sa>=1&&eb<=100&&sa<=eb) for(let n=sa;n<=eb;n++) nums.push(String(n).padStart(2,'0'));
-    }
-    const stripped = na.replace(rRx,' ');
-    for (const n of (stripped.match(/\b\d{1,3}\b/g)||[])) {
-      const v=parseInt(n,10);
-      if (n.length===2&&v>=0&&v<=99) nums.push(String(v).padStart(2,'0'));
-      else if (n==='100'||v===100) nums.push('100');
-      else if (n.length===3&&TRIPLE_NUMBERS.includes(n)) nums.push(n);
-    }
-    if (nums.length>0) entries.push({numbers:[...new Set(nums)],bracketValue:bv,category:cat,isDouble:isDbl});
   }
+
+  for (const seg of segments) {
+    let cat = seg.cat;
+    if (!cat) continue;
+    let area = seg.text;
+    if (seg.alias) {
+      area = area.replace(new RegExp('\\b' + seg.alias.replace(/\./g, '\\.?') + '\\b', 'gi'), ' ');
+    }
+
+    const isDbl = /\b(ab|abc)\b/i.test(area);
+    const parts = area.split(/(\(\d+\))/).map(p => p.trim()).filter(p => p.length > 0);
+
+    for (let i = 0; i < parts.length; i++) {
+      const na = parts[i];
+      if (na.startsWith('(') && na.endsWith(')')) continue;
+      const bp = parts[i + 1];
+      let bv = 1;
+      if (bp && bp.startsWith('(') && bp.endsWith(')')) {
+        bv = parseInt(bp.slice(1, -1), 10) || 1;
+        i++;
+      }
+
+      const nums = [];
+      const rRx = /(\d{1,2})\s*[^\w\d]*to[^\w\d]*\s*(\d{1,2})/gi;
+      let rm2;
+      while ((rm2 = rRx.exec(na)) !== null) {
+        const [, a, b] = rm2;
+        const sa = parseInt(a, 10), eb = parseInt(b, 10);
+        if (sa >= 1 && eb <= 100 && sa <= eb) {
+          for (let n = sa; n <= eb; n++) nums.push(String(n).padStart(2, '0'));
+        }
+      }
+
+      const stripped = na.replace(rRx, ' ');
+      for (const n of (stripped.match(/\b\d{1,3}\b/g) || [])) {
+        const v = parseInt(n, 10);
+        if (n.length === 2 && v >= 0 && v <= 99) nums.push(String(v).padStart(2, '0'));
+        else if (n.length === 1 && v >= 0 && v <= 9) nums.push(String(v).padStart(2, '0'));
+        else if (n === '100' || v === 100) nums.push('100');
+        else if (n.length === 3 && TRIPLE_NUMBERS.includes(n)) nums.push(n);
+      }
+
+      if (nums.length > 0) {
+        entries.push({ numbers: [...new Set(nums)], bracketValue: bv, category: cat, isDouble: isDbl });
+      }
+    }
+  }
+
   return entries;
 }
 
@@ -469,14 +522,18 @@ function generateExactBillImageWithPassing(data) {
     ctx.fill();
     ctx.restore();
 
+    // Universal font stack with fallbacks for Windows, Linux, Docker
+    const fontPrimary = '"Segoe UI", "DejaVu Sans", "Noto Sans", Arial, sans-serif';
+    const fontDevanagari = '"Nirmala UI", "Noto Sans Devanagari", "DejaVu Sans", "Segoe UI", Arial, sans-serif';
+
     // Header Content
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 15px "Segoe UI", "Nirmala UI", sans-serif';
+    ctx.font = `bold 15px ${fontPrimary}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(`${dateStr} | ${dateStr}`, cardX + 16, cardY + (headerHeight / 2));
+    ctx.fillText(`BILL REPORT | ${dateStr}`, cardX + 16, cardY + (headerHeight / 2));
 
-    const sendBadgeW = 52;
+    const sendBadgeW = 56;
     const sendBadgeH = 24;
     const sendBadgeX = cardX + cardWidth - 16 - sendBadgeW;
     const sendBadgeY = cardY + ((headerHeight - sendBadgeH) / 2);
@@ -484,20 +541,9 @@ function generateExactBillImageWithPassing(data) {
     ctx.fillStyle = '#059669';
     roundRect(sendBadgeX, sendBadgeY, sendBadgeW, sendBadgeH, 4, true, false);
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 11px "Segoe UI", sans-serif';
+    ctx.font = `bold 11px ${fontPrimary}`;
     ctx.textAlign = 'center';
     ctx.fillText('SEND', sendBadgeX + (sendBadgeW / 2), sendBadgeY + (sendBadgeH / 2) + 1);
-
-    const userText = `यूज़र आईडी: ${userName}`;
-    ctx.font = 'bold 12px "Segoe UI", "Nirmala UI", sans-serif';
-    const userTextW = ctx.measureText(userText).width + 16;
-    const userBadgeX = sendBadgeX - 10 - userTextW;
-    const userBadgeY = sendBadgeY;
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
-    roundRect(userBadgeX, userBadgeY, userTextW, sendBadgeH, 4, true, false);
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.fillText(userText, userBadgeX + (userTextW / 2), userBadgeY + (sendBadgeH / 2) + 1);
 
     // Table Content
     const tableX = cardX + padding;
@@ -514,7 +560,7 @@ function generateExactBillImageWithPassing(data) {
       ctx.strokeRect(curX, tableY, col.width, tableHeaderHeight);
 
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 12px "Segoe UI", sans-serif';
+      ctx.font = `bold 12px ${fontPrimary}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(col.label, curX + (col.width / 2), tableY + (tableHeaderHeight / 2));
@@ -547,7 +593,7 @@ function generateExactBillImageWithPassing(data) {
         else if (cIdx === 8) { cellVal = String(r.credit); fontColor = r.credit >= 0 ? '#16a34a' : '#dc2626'; isBold = true; }
 
         ctx.fillStyle = fontColor;
-        ctx.font = isBold ? 'bold 12px "Segoe UI", sans-serif' : '12px "Segoe UI", sans-serif';
+        ctx.font = isBold ? `bold 12px ${fontPrimary}` : `12px ${fontPrimary}`;
         ctx.fillText(cellVal, curX + (col.width / 2), curRowY + (rowHeight / 2));
 
         curX += col.width;
@@ -563,7 +609,7 @@ function generateExactBillImageWithPassing(data) {
     ctx.strokeRect(curX, curRowY, mergedColWidth, totalRowHeight);
 
     ctx.fillStyle = '#000000';
-    ctx.font = 'bold 12px "Segoe UI", sans-serif';
+    ctx.font = `bold 12px ${fontPrimary}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('TOTAL', curX + (mergedColWidth / 2), curRowY + (totalRowHeight / 2));
@@ -586,7 +632,7 @@ function generateExactBillImageWithPassing(data) {
       ctx.strokeRect(curX, curRowY, colObj.width, totalRowHeight);
 
       ctx.fillStyle = tCol.color;
-      ctx.font = tCol.bold ? 'bold 12px "Segoe UI", sans-serif' : '12px "Segoe UI", sans-serif';
+      ctx.font = tCol.bold ? `bold 12px ${fontPrimary}` : `12px ${fontPrimary}`;
       ctx.textAlign = 'center';
       ctx.fillText(tCol.val, curX + (colObj.width / 2), curRowY + (totalRowHeight / 2));
       curX += colObj.width;
@@ -604,7 +650,7 @@ function generateExactBillImageWithPassing(data) {
     ctx.strokeRect(tableX, curRowY, part1Width, footerRowHeight);
 
     ctx.fillStyle = '#000000';
-    ctx.font = 'bold 13px "Segoe UI", "Nirmala UI", sans-serif';
+    ctx.font = `bold 13px ${fontDevanagari}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText('पिछला बकाया (Prev): ₹0', tableX + 10, curRowY + (footerRowHeight / 2));
@@ -619,7 +665,7 @@ function generateExactBillImageWithPassing(data) {
 
     const netBal = data.grandNetBalance || 0;
     ctx.fillStyle = '#000000';
-    ctx.font = 'bold 13px "Segoe UI", "Nirmala UI", sans-serif';
+    ctx.font = `bold 13px ${fontDevanagari}`;
     ctx.textAlign = 'right';
     ctx.fillText(`कुल बकाया (Running Total): ₹${netBal < 0 ? '-' : ''}${Math.abs(netBal).toLocaleString('en-IN')}`, tableX + tableWidth - 10, curRowY + (footerRowHeight / 2));
 
@@ -757,132 +803,48 @@ async function startWhatsAppBot() {
         console.log(`\n========================================`);
         console.log(`📩 Message from +${senderPhone}: "${text}"`);
 
-        const todayResults = getTodayResults(todayDate);
-
-        // Specific Number (9785260088) -> Send Auto 'Ok' Reply + Direct Instant Passing Calculation & Bill Photo
-        if (senderPhone.includes('9785260088')) {
-          console.log(`🎯 Monitored Message from 9785260088 -> Sending 'Ok' reply & calculating passing...`);
-          try {
-            await sock.sendMessage(remoteJid, { text: `Ok` });
-          } catch (e) {
-            console.error('Error sending Ok reply:', e.message);
-          }
-          const calc = calculatePassingReport(text, todayResults, '90/10');
-          if (calc && calc.grandTSale > 0) {
-            let calcInfo = `\n\n📊 *TSC Passing & Total Report:*\n💰 *Total Sale:* ₹${calc.grandTSale}\n🎯 *Open Dara:* ₹${calc.grandODara}\n⚡ *Debit (Payout):* ₹${calc.grandDebit}\n💵 *Commission (90%):* ₹${calc.grandComm}\n💳 *Net Balance:* ₹${calc.grandNetBalance}`;
-            for (const cat in calc.breakdown) {
-              const b = calc.breakdown[cat];
-              const winSuffix = b.winningNumber ? ` [Open: *${b.winningNumber}*]` : '';
-              calcInfo += `\n📍 *${SHIFT_NAMES[cat] || cat.toUpperCase()}${winSuffix}:* Sale ₹${b.tSale} | Debit ₹${b.debit} | Net ₹${b.credit}`;
-            }
-
-            const caption = `📩 *New Message from 9785260088:*\n\n${text}${calcInfo}\n\n⏰ *Time:* ${timeString}`;
-            const imgBuf = generateExactBillImageWithPassing({
-              date: todayDate,
-              userName: 'DEFAULT',
-              rateLabel: calc.rateLabel,
-              grandTSale: calc.grandTSale,
-              grandODara: calc.grandODara,
-              grandOAkhar: calc.grandOAkhar,
-              grandDebit: calc.grandDebit,
-              grandComm: calc.grandComm,
-              grandNetBalance: calc.grandNetBalance,
-              breakdown: calc.breakdown
-            });
-
-            if (imgBuf) {
-              await sock.sendMessage(TARGET_JID, { image: imgBuf, caption });
-              console.log(`🖼️ Bill Photo + Details forwarded to ${TARGET_PHONE_RAW}`);
-            } else {
-              await sock.sendMessage(TARGET_JID, { text: caption });
-            }
-          } else {
-            const forwardMsg = `📩 *New Message from 9785260088:*\n\n${text}\n\n⏰ *Time:* ${timeString}`;
-            await sock.sendMessage(TARGET_JID, { text: forwardMsg });
-          }
-          console.log(`🚀 Successfully forwarded 9785260088 message to ${TARGET_PHONE_RAW}`);
-          console.log(`========================================`);
-          continue;
+        // 2. Direct Auto-Reply "Ok" to Sender
+        try {
+          await sock.sendMessage(remoteJid, { text: `Ok` });
+          console.log(`🤖 Auto "Ok" replied to +${senderPhone}`);
+          addLog('reply', `Auto 'Ok' -> +${senderPhone}`);
+        } catch (e) {
+          console.error('Error sending Ok reply:', e.message);
         }
 
-        // Step 1: New User -> Ask Name
-        if (!userStates[remoteJid] || userStates[remoteJid].stage === 'new') {
-          userStates[remoteJid] = {
-            stage: 'asked_name',
-            firstMsg: text,
-            phone: senderPhone,
-            time: timeString,
-          };
-          saveStates();
-
-          console.log(`🤖 Asking name from +${senderPhone}...`);
-          addLog('lead', `New contact +${senderPhone}: "${text}" -> Asking Name`);
-
-          await sock.sendMessage(remoteJid, {
-            text: `Namaste! 🙏\nKripya apna shubh *Naam (Name)* batayein?`
+        // 3. Passing Calculation & Pure Forwarding (NO extra name/client-id text!)
+        const calc = calculatePassingReport(text, todayResults, '90/10');
+        if (calc && calc.grandTSale > 0) {
+          console.log(`📊 Valid bet message -> Calculating passing & generating photo bill...`);
+          const imgBuf = generateExactBillImageWithPassing({
+            date: todayDate,
+            userName: 'DEFAULT',
+            rateLabel: calc.rateLabel,
+            grandTSale: calc.grandTSale,
+            grandODara: calc.grandODara,
+            grandOAkhar: calc.grandOAkhar,
+            grandDebit: calc.grandDebit,
+            grandComm: calc.grandComm,
+            grandNetBalance: calc.grandNetBalance,
+            breakdown: calc.breakdown
           });
 
-          const initialAlert = `🔔 *Naya WhatsApp Message Aaya!*\n📱 *Number:* +${senderPhone}\n💬 *Message:* ${text}\n⏰ *Time:* ${timeString}\n⏳ *Status:* Naam poochha gaya hai...`;
-          await sock.sendMessage(TARGET_JID, { text: initialAlert });
-        }
-        // Step 2: User replied with their Name
-        else if (userStates[remoteJid].stage === 'asked_name') {
-          const userName = text;
-          userStates[remoteJid].name = userName;
-          userStates[remoteJid].stage = 'registered';
-          saveStates();
-          botState.leadsCaptured++;
-
-          console.log(`👤 Name captured: "${userName}" (+${senderPhone})`);
-          addLog('lead', `Lead Name Saved: "${userName}" (+${senderPhone})`);
-
-          await sock.sendMessage(remoteJid, { text: `Ok` });
-
-          const leadAlert = `✅ *Nayi Contact Detail Mil Gayi!*\n\n👤 *Naam:* ${userName}\n📱 *Phone:* +${senderPhone}\n💬 *First Message:* ${userStates[remoteJid].firstMsg}\n⏰ *Time:* ${timeString}`;
-          await sock.sendMessage(TARGET_JID, { text: leadAlert });
-          console.log(`🚀 Lead details forwarded to ${TARGET_PHONE_RAW}`);
-        }
-        // Step 3: Subsequent messages -> Reply "Ok" & Forward
-        else if (userStates[remoteJid].stage === 'registered') {
-          const userName = userStates[remoteJid].name || senderPhone;
-          await sock.sendMessage(remoteJid, { text: `Ok` });
-          console.log(`🤖 Replied "Ok" to ${userName}`);
-
-          const calc = calculatePassingReport(text, todayResults, '90/10');
-          if (calc && calc.grandTSale > 0) {
-            let calcInfo = `\n\n📊 *TSC Passing & Total Report:*\n💰 *Total Sale:* ₹${calc.grandTSale}\n🎯 *Open Dara:* ₹${calc.grandODara}\n⚡ *Debit (Payout):* ₹${calc.grandDebit}\n💵 *Commission (90%):* ₹${calc.grandComm}\n💳 *Net Balance:* ₹${calc.grandNetBalance}`;
-            for (const cat in calc.breakdown) {
-              const b = calc.breakdown[cat];
-              const winSuffix = b.winningNumber ? ` [Open: *${b.winningNumber}*]` : '';
-              calcInfo += `\n📍 *${SHIFT_NAMES[cat] || cat.toUpperCase()}${winSuffix}:* Sale ₹${b.tSale} | Debit ₹${b.debit} | Net ₹${b.credit}`;
-            }
-
-            const followUpAlert = `💬 *Message from ${userName}* (+${senderPhone}):\n${text}${calcInfo}`;
-            const imgBuf = generateExactBillImageWithPassing({
-              date: todayDate,
-              userName: userName || 'DEFAULT',
-              rateLabel: calc.rateLabel,
-              grandTSale: calc.grandTSale,
-              grandODara: calc.grandODara,
-              grandOAkhar: calc.grandOAkhar,
-              grandDebit: calc.grandDebit,
-              grandComm: calc.grandComm,
-              grandNetBalance: calc.grandNetBalance,
-              breakdown: calc.breakdown
-            });
-
-            if (imgBuf) {
-              await sock.sendMessage(TARGET_JID, { image: imgBuf, caption: followUpAlert });
-              console.log(`🖼️ Forwarded Bill Photo to ${TARGET_PHONE_RAW}`);
-            } else {
-              await sock.sendMessage(TARGET_JID, { text: followUpAlert });
-            }
+          if (imgBuf) {
+            // Forward photo bill with ONLY the exact raw message as caption
+            await sock.sendMessage(TARGET_JID, { image: imgBuf, caption: text });
+            console.log(`🖼️ Forwarded Bill Photo + Pure Message to ${TARGET_PHONE_RAW}`);
+            addLog('forward', `Bill Photo + "${text}" forwarded to ${TARGET_PHONE_RAW}`);
           } else {
-            const followUpAlert = `💬 *Message from ${userName}* (+${senderPhone}):\n${text}`;
-            await sock.sendMessage(TARGET_JID, { text: followUpAlert });
+            // Forward strictly the raw message
+            await sock.sendMessage(TARGET_JID, { text: text });
+            console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE_RAW}: "${text}"`);
+            addLog('forward', `Forwarded "${text}" to ${TARGET_PHONE_RAW}`);
           }
-          console.log(`🚀 Forwarded message to ${TARGET_PHONE_RAW}`);
-          addLog('msg', `From ${userName} (+${senderPhone}): "${text}" -> Forwarded`);
+        } else {
+          // Non-betting message: forward ONLY the exact text sent by the user
+          await sock.sendMessage(TARGET_JID, { text: text });
+          console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE_RAW}: "${text}"`);
+          addLog('forward', `Forwarded "${text}" to ${TARGET_PHONE_RAW}`);
         }
         console.log(`========================================`);
       } catch (err) {
