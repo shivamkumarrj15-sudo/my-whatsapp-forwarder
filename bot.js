@@ -832,27 +832,50 @@ async function startWhatsAppBot() {
 
           if (imgBuf) {
             // Forward photo bill with ONLY the exact raw message as caption
-            await sock.sendMessage(TARGET_JID, { image: imgBuf, caption: text });
+            await forwardToTarget({ image: imgBuf, caption: text });
             console.log(`🖼️ Forwarded Bill Photo + Pure Message to ${TARGET_PHONE_RAW}`);
-            addLog('forward', `Bill Photo + "${text}" forwarded to ${TARGET_PHONE_RAW}`);
+            addLog('forward', `Bill Photo + "${text}" -> ${TARGET_PHONE_RAW}`);
           } else {
             // Forward strictly the raw message
-            await sock.sendMessage(TARGET_JID, { text: text });
+            await forwardToTarget({ text: text });
             console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE_RAW}: "${text}"`);
-            addLog('forward', `Forwarded "${text}" to ${TARGET_PHONE_RAW}`);
+            addLog('forward', `Forwarded "${text}" -> ${TARGET_PHONE_RAW}`);
           }
         } else {
           // Non-betting message: forward ONLY the exact text sent by the user
-          await sock.sendMessage(TARGET_JID, { text: text });
+          await forwardToTarget({ text: text });
           console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE_RAW}: "${text}"`);
-          addLog('forward', `Forwarded "${text}" to ${TARGET_PHONE_RAW}`);
+          addLog('forward', `Forwarded "${text}" -> ${TARGET_PHONE_RAW}`);
         }
         console.log(`========================================`);
       } catch (err) {
         console.error('⚠️ Error processing incoming message:', err.message);
+        addLog('error', `Process error: ${err.message}`);
       }
     }
   });
+}
+
+// Robust Forward Helper with Self-Chat Support & Fallbacks
+async function forwardToTarget(payload) {
+  const target = '918005844014@s.whatsapp.net';
+  try {
+    console.log(`📤 Forwarding message to ${target}...`);
+    return await sock.sendMessage(target, payload);
+  } catch (err) {
+    console.error(`❌ Error forwarding to ${target}:`, err.message);
+    addLog('warn', `Forward try 1 failed (${err.message}), retrying self JID...`);
+    try {
+      if (sock.user && sock.user.id) {
+        const selfJid = sock.user.id.split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+        console.log(`🔄 Retrying forward to self user JID: ${selfJid}...`);
+        return await sock.sendMessage(selfJid, payload);
+      }
+    } catch (e2) {
+      console.error(`❌ Retry forward failed:`, e2.message);
+      addLog('error', `Forward retry failed: ${e2.message}`);
+    }
+  }
 }
 
 // ==================== EXPRESS WEB DASHBOARD ====================
