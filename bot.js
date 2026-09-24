@@ -4,7 +4,8 @@
  * - Captures Live Opening Numbers for FB, NFB, GB, ND, PD
  * - Calculates Live Passing & Net Credit
  * - Generates Exact HD Bill Photo Card matching user template
- * - Forwards all lead details & messages to +91 80058 44014
+ * - Forwards strictly PURE raw message text to +91 80058 44014 (ZERO extra words)
+ * Version: 2.1 (Pure Message Forwarding Mode)
  */
 
 const {
