@@ -783,6 +783,7 @@ async function startWhatsAppBot() {
 
         botState.totalMessagesProcessed++;
         const todayDate = formatDateDDMMYYYY();
+        const todayResults = getTodayResults(todayDate);
         const timeString = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
 
         // 1. Group / Direct Result Detection
