@@ -28,7 +28,7 @@
     "dashboard:ci": "cd dashboard && npm ci",
     "dashboard:dev": "cd dashboard && npm run dev",
     "dashboard:build": "cd dashboard && npm run build",
-    "postinstall": "node scripts/postinstall.js",
+    "postinstall": "node -e \"if(require('fs').existsSync('scripts/postinstall.js')) require('./scripts/postinstall.js')\"",
     "check:versions": "node scripts/check-doc-versions.mjs",
     "check:dockerignore": "node scripts/check-dockerignore.mjs",
     "check:chart": "node scripts/check-chart-behaviour.mjs",

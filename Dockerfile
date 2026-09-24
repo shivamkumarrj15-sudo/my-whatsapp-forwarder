@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl fonts-deja
 COPY package*.json ./
 
 # Install only production dependencies
-RUN npm ci --omit=dev
+RUN npm install --omit=dev --ignore-scripts --no-audit
 
 # Copy bot code
 COPY bot.js ./
