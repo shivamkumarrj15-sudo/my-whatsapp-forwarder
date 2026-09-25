@@ -58,6 +58,22 @@ function saveResults() {
   } catch {}
 }
 
+// Held / Queued Messages Memory File (Pre-Booking Queue)
+const HELD_DB_FILE = path.join(__dirname, 'held_messages.json');
+let heldMessages = [];
+if (fs.existsSync(HELD_DB_FILE)) {
+  try {
+    heldMessages = JSON.parse(fs.readFileSync(HELD_DB_FILE, 'utf8'));
+    if (!Array.isArray(heldMessages)) heldMessages = [];
+  } catch {}
+}
+
+function saveHeldMessages() {
+  try {
+    fs.writeFileSync(HELD_DB_FILE, JSON.stringify(heldMessages, null, 2), 'utf8');
+  } catch {}
+}
+
 function formatDateDDMMYYYY(d = new Date()) {
   const day = String(d.getDate()).padStart(2, '0');
   const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -201,6 +217,46 @@ function isShiftTimeOpen(catKey, totalMinutes) {
   }
 }
 
+function getShiftStatus(catKey, totalMinutes) {
+  const key = catKey.toLowerCase();
+  
+  if (key === 'fb') {
+    // Window: 15:00 (900) - 17:50 (1070)
+    if (totalMinutes >= 900 && totalMinutes <= 1070) return 'OPEN';
+    if (totalMinutes < 900 && totalMinutes >= 360) return 'FUTURE'; // 6 AM to 3 PM
+    return 'EXPIRED'; // After 5:50 PM
+  }
+  
+  if (key === 'gb') {
+    // Window: 18:30 (1110) - 21:50 (1310)
+    if (totalMinutes >= 1110 && totalMinutes <= 1310) return 'OPEN';
+    if (totalMinutes < 1110 && totalMinutes >= 360) return 'FUTURE'; // before 6:30 PM (e.g. during FB)
+    return 'EXPIRED'; // After 9:50 PM
+  }
+  
+  if (key === 'nd') {
+    // Window: 22:00 (1320) - 23:30 (1410)
+    if (totalMinutes >= 1320 && totalMinutes <= 1410) return 'OPEN';
+    if (totalMinutes < 1320 && totalMinutes >= 360) return 'FUTURE'; // before 10 PM (e.g. during FB or GB)
+    return 'EXPIRED'; // After 11:30 PM
+  }
+  
+  if (key === 'pd') {
+    // Window: 23:00 (1380) - 3:00 AM (180)
+    if (totalMinutes >= 1380 || totalMinutes <= 180) return 'OPEN';
+    if (totalMinutes >= 600 && totalMinutes < 1380) return 'FUTURE'; // 10 AM to 11 PM (e.g. during FB, GB, ND)
+    return 'EXPIRED'; // 3:01 AM to 10:00 AM
+  }
+  
+  if (key === 'nfb') {
+    if (totalMinutes >= 900 && totalMinutes <= 1140) return 'OPEN';
+    if (totalMinutes < 900 && totalMinutes >= 360) return 'FUTURE';
+    return 'EXPIRED';
+  }
+  
+  return 'OPEN';
+}
+
 function getActiveShift(totalMinutes) {
   for (const k of ['fb', 'gb', 'nd', 'pd', 'nfb']) {
     if (isShiftTimeOpen(k, totalMinutes)) return k;
@@ -255,10 +311,12 @@ function checkMessageTimeValidity(text, calc) {
     return {
       isBet: false,
       valid: false,
+      status: 'INVALID',
       reason: 'Not a valid bet message format',
       replyText: 'Not ok',
       shouldReply: true,
       shouldForward: false,
+      shouldHold: false,
       timeFormatted
     };
   }
@@ -284,55 +342,85 @@ function checkMessageTimeValidity(text, calc) {
       return {
         isBet: true,
         valid: false,
+        status: 'EXPIRED',
         reason: `No shift currently open at ${timeFormatted} IST`,
         replyText: 'Not ok',
         shouldReply: true,
         shouldForward: false,
+        shouldHold: false,
         timeFormatted,
         closedShifts: []
       };
     }
   }
 
-  // 3. Check each shift timing
+  // 3. Classify each shift status: OPEN, FUTURE, or EXPIRED
   const openShifts = [];
-  const closedShifts = [];
+  const futureShifts = [];
+  const expiredShifts = [];
 
   for (const s of shiftList) {
-    if (isShiftTimeOpen(s, totalMinutes)) {
-      openShifts.push(s);
-    } else {
-      closedShifts.push(s);
-    }
+    const st = getShiftStatus(s, totalMinutes);
+    if (st === 'OPEN') openShifts.push(s);
+    else if (st === 'FUTURE') futureShifts.push(s);
+    else expiredShifts.push(s);
   }
 
-  // If ALL specified shifts are closed / expired
-  if (openShifts.length === 0) {
-    const shiftNames = closedShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ');
+  // Case A: At least one shift is OPEN right now!
+  if (openShifts.length > 0) {
     return {
       isBet: true,
-      valid: false,
-      reason: `Time closed for shift(s): ${shiftNames} at ${timeFormatted} IST`,
-      replyText: 'Not ok',
+      valid: true,
+      status: 'OPEN',
+      reason: `Open shift(s): ${openShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ')}`,
+      replyText: 'Ok',
       shouldReply: true,
-      shouldForward: false,
+      shouldForward: true,
+      shouldHold: false,
       timeFormatted,
-      openShifts: [],
-      closedShifts
+      openShifts,
+      futureShifts,
+      expiredShifts
     };
   }
 
-  // Valid and open in time window
+  // Case B: No shifts open right now, but FUTURE shifts exist (e.g. GB or ND or PD sent in advance)
+  // USER REQUIREMENT: "us time me gb wale msg aaye usko hold me rakh de... usme koi reply mat de jaise hi gb ka time aaye tab ok kar ke forward kar de"
+  if (futureShifts.length > 0) {
+    const targetShift = futureShifts[0]; // primary future shift
+    return {
+      isBet: true,
+      valid: false,
+      status: 'FUTURE',
+      targetShift: targetShift,
+      reason: `Held for future shift: ${SHIFT_NAMES[targetShift] || targetShift.toUpperCase()} (${SHIFT_TIME_WINDOWS[targetShift]?.display})`,
+      replyText: null, // Silent hold
+      shouldReply: false,
+      shouldForward: false,
+      shouldHold: true,
+      timeFormatted,
+      openShifts,
+      futureShifts,
+      expiredShifts
+    };
+  }
+
+  // Case C: ALL shifts are EXPIRED (e.g. FB sent during GB at 8 PM)
+  // USER REQUIREMENT: "gb ke time me fb ka msg aaaye toh not okk kar"
+  const expiredNames = expiredShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ');
   return {
     isBet: true,
-    valid: true,
-    reason: `Open shift(s): ${openShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ')}`,
-    replyText: 'Ok',
+    valid: false,
+    status: 'EXPIRED',
+    reason: `Time closed for shift(s): ${expiredNames} at ${timeFormatted} IST`,
+    replyText: 'Not ok',
     shouldReply: true,
-    shouldForward: true,
+    shouldForward: false,
+    shouldHold: false,
     timeFormatted,
     openShifts,
-    closedShifts
+    futureShifts,
+    expiredShifts
   };
 }
 
@@ -1026,6 +1114,29 @@ async function startWhatsAppBot() {
         console.log(`\n========================================`);
         console.log(`📩 Message from +${senderPhone}: "${text}"`);
 
+        // Case A: FUTURE Shift -> HOLD Message silently in queue!
+        // (e.g. GB or ND or PD sent early during FB or GB)
+        if (timeCheck.shouldHold) {
+          console.log(`⏳ [HOLD QUEUE] Message from +${senderPhone} saved for ${timeCheck.targetShift.toUpperCase()}.`);
+          console.log(`ℹ️ Reason: ${timeCheck.reason} -> Will reply 'Ok' and forward when ${timeCheck.targetShift.toUpperCase()} starts.`);
+          
+          heldMessages.push({
+            id: msgId || `${senderPhone}_${Date.now()}`,
+            remoteJid: remoteJid,
+            senderPhone: senderPhone,
+            text: text,
+            targetShift: timeCheck.targetShift,
+            receivedAtIST: timeFormatted,
+            receivedTimestamp: Date.now()
+          });
+          saveHeldMessages();
+
+          addLog('hold', `Held msg "${text}" from +${senderPhone} for ${timeCheck.targetShift.toUpperCase()}`);
+          console.log(`========================================`);
+          continue;
+        }
+
+        // Case B: EXPIRED or INVALID -> Reply "Not ok" and STOP!
         if (!timeCheck.valid) {
           console.log(`⏱️ [NOT OK] Message from +${senderPhone} at ${timeFormatted} IST: "${text}"`);
           console.log(`❌ Reason: ${timeCheck.reason} -> Replying "${timeCheck.replyText || 'Not ok'}" and STOPPING forward.`);
@@ -1043,7 +1154,7 @@ async function startWhatsAppBot() {
           continue;
         }
 
-        // 4. Message is VALID in open shift window -> Reply "Ok" to Sender
+        // Case C: OPEN Shift -> Reply "Ok" to Sender & Forward!
         try {
           await sock.sendMessage(remoteJid, { text: timeCheck.replyText || 'Ok' });
           console.log(`🤖 Auto "${timeCheck.replyText || 'Ok'}" replied to +${senderPhone}`);
@@ -1052,39 +1163,8 @@ async function startWhatsAppBot() {
           console.error('Error sending Ok reply:', e.message);
         }
 
-        // 5. Passing Report & Pure Forwarding to TARGET (8005844014) (NO extra name/client-id text!)
-        if (calc && calc.grandTSale > 0) {
-          console.log(`📊 Valid bet message -> Calculating passing & generating photo bill...`);
-          const imgBuf = generateExactBillImageWithPassing({
-            date: todayDate,
-            userName: 'DEFAULT',
-            rateLabel: calc.rateLabel,
-            grandTSale: calc.grandTSale,
-            grandODara: calc.grandODara,
-            grandOAkhar: calc.grandOAkhar,
-            grandDebit: calc.grandDebit,
-            grandComm: calc.grandComm,
-            grandNetBalance: calc.grandNetBalance,
-            breakdown: calc.breakdown
-          });
-
-          if (imgBuf) {
-            // Forward photo bill with ONLY the exact raw message as caption
-            await forwardToTarget({ image: imgBuf, caption: text });
-            console.log(`🖼️ Forwarded Bill Photo + Pure Message to ${TARGET_PHONE_RAW}`);
-            addLog('forward', `Bill Photo + "${text}" -> ${TARGET_PHONE_RAW}`);
-          } else {
-            // Forward strictly the raw message
-            await forwardToTarget({ text: text });
-            console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE_RAW}: "${text}"`);
-            addLog('forward', `Forwarded "${text}" -> ${TARGET_PHONE_RAW}`);
-          }
-        } else {
-          // Bet message raw text forward ONLY (bina kisi name ya prefix ke)
-          await forwardToTarget({ text: text });
-          console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE_RAW}: "${text}"`);
-          addLog('forward', `Forwarded "${text}" -> ${TARGET_PHONE_RAW}`);
-        }
+        // Forward to TARGET (8005844014)
+        await processAndForwardBet(text, senderPhone, todayDate, todayResults);
         console.log(`========================================`);
       } catch (err) {
         console.error('⚠️ Error processing incoming message:', err.message);
@@ -1092,6 +1172,94 @@ async function startWhatsAppBot() {
       }
     }
   });
+
+  // Background Checker for Held / Queued Messages (Runs every 15 seconds)
+  setInterval(async () => {
+    if (!sock || botState.status !== 'connected' || heldMessages.length === 0) return;
+    
+    const { totalMinutes, timeFormatted } = getKolkataTime();
+    const curDate = formatDateDDMMYYYY();
+    const curResults = getTodayResults(curDate);
+    const remaining = [];
+
+    for (const item of heldMessages) {
+      const shiftKey = item.targetShift;
+      const status = getShiftStatus(shiftKey, totalMinutes);
+
+      if (status === 'OPEN') {
+        console.log(`\n🎉 [HOLD RELEASE] Shift ${shiftKey.toUpperCase()} is NOW OPEN at ${timeFormatted} IST! Processing held msg from +${item.senderPhone}...`);
+        
+        // 1. Send "Ok" reply to sender
+        try {
+          await sock.sendMessage(item.remoteJid, { text: 'Ok' });
+          console.log(`🤖 Auto 'Ok' replied to +${item.senderPhone} for released ${shiftKey.toUpperCase()} bet.`);
+          addLog('reply', `Held released: Auto 'Ok' -> +${item.senderPhone} (${shiftKey.toUpperCase()})`);
+        } catch (e) {
+          console.error('Error replying Ok to held msg sender:', e.message);
+        }
+
+        // 2. Process Passing & Forward to Target (8005844014)
+        try {
+          await processAndForwardBet(item.text, item.senderPhone, curDate, curResults);
+        } catch (eFwd) {
+          console.error('Error forwarding released held msg:', eFwd.message);
+        }
+      } else if (status === 'EXPIRED') {
+        console.log(`⚠️ [HOLD EXPIRED] Shift ${shiftKey.toUpperCase()} expired for held message from +${item.senderPhone}.`);
+        try {
+          await sock.sendMessage(item.remoteJid, { text: 'Not ok' });
+          addLog('reply', `Held expired: Auto 'Not ok' -> +${item.senderPhone} (${shiftKey.toUpperCase()})`);
+        } catch {}
+      } else {
+        // Still in FUTURE window -> keep in hold queue!
+        remaining.push(item);
+      }
+    }
+
+    if (remaining.length !== heldMessages.length) {
+      heldMessages = remaining;
+      saveHeldMessages();
+    }
+  }, 15000);
+}
+
+// Helper to calculate passing report & forward pure message / bill photo to target
+async function processAndForwardBet(text, senderPhone, todayDate, todayResults) {
+  let calc = null;
+  try {
+    calc = calculatePassingReport(text, todayResults || getTodayResults(todayDate), '90/10');
+  } catch (e) {}
+
+  if (calc && calc.grandTSale > 0) {
+    console.log(`📊 Valid bet message -> Calculating passing & generating photo bill...`);
+    const imgBuf = generateExactBillImageWithPassing({
+      date: todayDate,
+      userName: 'DEFAULT',
+      rateLabel: calc.rateLabel,
+      grandTSale: calc.grandTSale,
+      grandODara: calc.grandODara,
+      grandOAkhar: calc.grandOAkhar,
+      grandDebit: calc.grandDebit,
+      grandComm: calc.grandComm,
+      grandNetBalance: calc.grandNetBalance,
+      breakdown: calc.breakdown
+    });
+
+    if (imgBuf) {
+      await forwardToTarget({ image: imgBuf, caption: text });
+      console.log(`🖼️ Forwarded Bill Photo + Pure Message to ${TARGET_PHONE_RAW}`);
+      addLog('forward', `Bill Photo + "${text}" -> ${TARGET_PHONE_RAW}`);
+    } else {
+      await forwardToTarget({ text: text });
+      console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE_RAW}: "${text}"`);
+      addLog('forward', `Forwarded "${text}" -> ${TARGET_PHONE_RAW}`);
+    }
+  } else {
+    // Bet message raw text forward ONLY (bina kisi name ya prefix ke)
+    await forwardToTarget({ text: text });
+    console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE_RAW}: "${text}"`);
+    addLog('forward', `Forwarded "${text}" -> ${TARGET_PHONE_RAW}`);
+  }
 }
 
 // Robust Forward Helper with Self-Chat Support & Fallbacks
@@ -1136,12 +1304,15 @@ app.get('/api/status', (req, res) => {
     key: k,
     name: SHIFT_TIME_WINDOWS[k].name,
     display: SHIFT_TIME_WINDOWS[k].display,
+    status: getShiftStatus(k, totalMinutes),
     isOpen: isShiftTimeOpen(k, totalMinutes)
   }));
   res.json({
     ...botState,
     kolkataTime: timeFormatted,
-    shifts
+    shifts,
+    heldCount: heldMessages.length,
+    heldMessages: heldMessages.slice(0, 10)
   });
 });
 
@@ -1174,6 +1345,7 @@ app.get('/', (req, res) => {
     .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; }
     .badge-status { font-size: 0.9rem; padding: 6px 12px; }
     .shift-badge-open { background: #059669; color: #fff; font-size: 0.75rem; padding: 3px 8px; border-radius: 6px; }
+    .shift-badge-future { background: #d97706; color: #fff; font-size: 0.75rem; padding: 3px 8px; border-radius: 6px; }
     .shift-badge-closed { background: #dc2626; color: #fff; font-size: 0.75rem; padding: 3px 8px; border-radius: 6px; }
   </style>
 </head>
@@ -1191,22 +1363,28 @@ app.get('/', (req, res) => {
     </div>
     
     <div class="row g-3 mb-4">
-      <div class="col-md-4">
+      <div class="col-md-3">
         <div class="card p-3">
           <div class="text-secondary small">Connected As</div>
-          <div id="connectedAs" class="fs-5 fw-bold text-light mt-1">Not Connected</div>
+          <div id="connectedAs" class="fs-6 fw-bold text-light mt-1">Not Connected</div>
         </div>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
         <div class="card p-3">
           <div class="text-secondary small">Messages Processed</div>
-          <div id="msgCount" class="fs-5 fw-bold text-success mt-1">0</div>
+          <div id="msgCount" class="fs-6 fw-bold text-success mt-1">0</div>
         </div>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
+        <div class="card p-3">
+          <div class="text-secondary small">Held Queue (Future)</div>
+          <div id="heldCount" class="fs-6 fw-bold text-warning mt-1">0</div>
+        </div>
+      </div>
+      <div class="col-md-3">
         <div class="card p-3">
           <div class="text-secondary small">Forward Target</div>
-          <div class="fs-5 fw-bold text-info mt-1">+91 80058 44014</div>
+          <div class="fs-6 fw-bold text-info mt-1">+91 80058 44014</div>
         </div>
       </div>
     </div>
@@ -1220,15 +1398,15 @@ app.get('/', (req, res) => {
             <tr class="table-secondary text-dark">
               <th>Shift</th>
               <th>Valid Window</th>
-              <th>Rule (Cutoff)</th>
+              <th>Advance Booking Rule</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody id="shiftTableBody">
             <tr><td><b>FB (Faridabad)</b></td><td>3:00 PM - 5:50 PM</td><td>5:50 PM tak Ok+Forward | 5:51 PM pe Not ok</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
-            <tr><td><b>GB (Ghaziabad)</b></td><td>6:30 PM - 9:50 PM</td><td>9:50 PM tak Ok+Forward | 9:51 PM pe Not ok</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
-            <tr><td><b>ND (Gali)</b></td><td>10:00 PM - 11:30 PM</td><td>11:30 PM tak Ok+Forward | 11:31 PM pe Not ok</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
-            <tr><td><b>PD (Desawar)</b></td><td>11:00 PM - 3:00 AM</td><td>3:00 AM tak Ok+Forward | 3:01 AM pe Not ok</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
+            <tr><td><b>GB (Ghaziabad)</b></td><td>6:30 PM - 9:50 PM</td><td>FB ke time Hold | 6:30 PM pe Ok+Forward</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
+            <tr><td><b>ND (Gali)</b></td><td>10:00 PM - 11:30 PM</td><td>GB ke time Hold | 10:00 PM pe Ok+Forward</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
+            <tr><td><b>PD (Desawar)</b></td><td>11:00 PM - 3:00 AM</td><td>Din me Hold | 11:00 PM pe Ok+Forward</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
           </tbody>
         </table>
       </div>
@@ -1269,16 +1447,28 @@ app.get('/', (req, res) => {
           }
         }
         document.getElementById('msgCount').innerText = data.totalMessagesProcessed || 0;
+        document.getElementById('heldCount').innerText = data.heldCount || 0;
         if (data.kolkataTime) {
           document.getElementById('kolkataClock').innerText = 'IST: ' + data.kolkataTime;
         }
 
         if (data.shifts && data.shifts.length > 0) {
           const rowsHtml = data.shifts.map(function(s) {
-            const statusHtml = s.isOpen 
-              ? '<span class="shift-badge-open"><i class="fa-solid fa-check me-1"></i>OPEN (Ok)</span>'
-              : '<span class="shift-badge-closed"><i class="fa-solid fa-ban me-1"></i>CLOSED (Not ok)</span>';
-            const ruleText = s.key === 'fb' ? '5:50 PM tak Ok+Forward | 5:51 PM pe Not ok' : s.display + ' tak Ok+Forward';
+            let statusHtml = '';
+            if (s.status === 'OPEN') {
+              statusHtml = '<span class="shift-badge-open"><i class="fa-solid fa-check me-1"></i>OPEN (Ok)</span>';
+            } else if (s.status === 'FUTURE') {
+              statusHtml = '<span class="shift-badge-future"><i class="fa-solid fa-hourglass-start me-1"></i>FUTURE (Hold)</span>';
+            } else {
+              statusHtml = '<span class="shift-badge-closed"><i class="fa-solid fa-ban me-1"></i>CLOSED (Not ok)</span>';
+            }
+            let ruleText = '';
+            if (s.key === 'fb') ruleText = '5:50 PM tak Ok+Forward | 5:51 PM pe Not ok';
+            else if (s.key === 'gb') ruleText = 'FB ke time Hold | 6:30 PM pe Ok+Forward';
+            else if (s.key === 'nd') ruleText = 'GB ke time Hold | 10:00 PM pe Ok+Forward';
+            else if (s.key === 'pd') ruleText = 'Din me Hold | 11:00 PM pe Ok+Forward';
+            else ruleText = s.display + ' tak Ok+Forward';
+
             return '<tr><td><b>' + s.name + ' (' + s.key.toUpperCase() + ')</b></td><td>' + s.display + '</td><td>' + ruleText + '</td><td>' + statusHtml + '</td></tr>';
           }).join('');
           document.getElementById('shiftTableBody').innerHTML = rowsHtml;

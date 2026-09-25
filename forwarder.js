@@ -47,6 +47,22 @@ function saveResults() {
   } catch {}
 }
 
+// Held / Queued Messages Memory File (Pre-Booking Queue)
+const HELD_DB_FILE = path.join(__dirname, 'held_messages.json');
+let heldMessages = [];
+if (fs.existsSync(HELD_DB_FILE)) {
+  try {
+    heldMessages = JSON.parse(fs.readFileSync(HELD_DB_FILE, 'utf8'));
+    if (!Array.isArray(heldMessages)) heldMessages = [];
+  } catch {}
+}
+
+function saveHeldMessages() {
+  try {
+    fs.writeFileSync(HELD_DB_FILE, JSON.stringify(heldMessages, null, 2), 'utf8');
+  } catch {}
+}
+
 function formatDateDDMMYYYY(d = new Date()) {
   const day = String(d.getDate()).padStart(2, '0');
   const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -172,6 +188,42 @@ function isShiftTimeOpen(catKey, totalMinutes) {
   }
 }
 
+function getShiftStatus(catKey, totalMinutes) {
+  const key = catKey.toLowerCase();
+  
+  if (key === 'fb') {
+    if (totalMinutes >= 900 && totalMinutes <= 1070) return 'OPEN';
+    if (totalMinutes < 900 && totalMinutes >= 360) return 'FUTURE';
+    return 'EXPIRED';
+  }
+  
+  if (key === 'gb') {
+    if (totalMinutes >= 1110 && totalMinutes <= 1310) return 'OPEN';
+    if (totalMinutes < 1110 && totalMinutes >= 360) return 'FUTURE';
+    return 'EXPIRED';
+  }
+  
+  if (key === 'nd') {
+    if (totalMinutes >= 1320 && totalMinutes <= 1410) return 'OPEN';
+    if (totalMinutes < 1320 && totalMinutes >= 360) return 'FUTURE';
+    return 'EXPIRED';
+  }
+  
+  if (key === 'pd') {
+    if (totalMinutes >= 1380 || totalMinutes <= 180) return 'OPEN';
+    if (totalMinutes >= 600 && totalMinutes < 1380) return 'FUTURE';
+    return 'EXPIRED';
+  }
+  
+  if (key === 'nfb') {
+    if (totalMinutes >= 900 && totalMinutes <= 1140) return 'OPEN';
+    if (totalMinutes < 900 && totalMinutes >= 360) return 'FUTURE';
+    return 'EXPIRED';
+  }
+  
+  return 'OPEN';
+}
+
 function getActiveShift(totalMinutes) {
   for (const k of ['fb', 'gb', 'nd', 'pd', 'nfb']) {
     if (isShiftTimeOpen(k, totalMinutes)) return k;
@@ -226,10 +278,12 @@ function checkMessageTimeValidity(text, calc) {
     return {
       isBet: false,
       valid: false,
+      status: 'INVALID',
       reason: 'Not a valid bet message format',
       replyText: 'Not ok',
       shouldReply: true,
       shouldForward: false,
+      shouldHold: false,
       timeFormatted
     };
   }
@@ -255,55 +309,83 @@ function checkMessageTimeValidity(text, calc) {
       return {
         isBet: true,
         valid: false,
+        status: 'EXPIRED',
         reason: `No shift currently open at ${timeFormatted} IST`,
         replyText: 'Not ok',
         shouldReply: true,
         shouldForward: false,
+        shouldHold: false,
         timeFormatted,
         closedShifts: []
       };
     }
   }
 
-  // 3. Check each shift timing
+  // 3. Classify each shift status: OPEN, FUTURE, or EXPIRED
   const openShifts = [];
-  const closedShifts = [];
+  const futureShifts = [];
+  const expiredShifts = [];
 
   for (const s of shiftList) {
-    if (isShiftTimeOpen(s, totalMinutes)) {
-      openShifts.push(s);
-    } else {
-      closedShifts.push(s);
-    }
+    const st = getShiftStatus(s, totalMinutes);
+    if (st === 'OPEN') openShifts.push(s);
+    else if (st === 'FUTURE') futureShifts.push(s);
+    else expiredShifts.push(s);
   }
 
-  // If ALL specified shifts are closed / expired
-  if (openShifts.length === 0) {
-    const shiftNames = closedShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ');
+  // Case A: At least one shift is OPEN right now!
+  if (openShifts.length > 0) {
     return {
       isBet: true,
-      valid: false,
-      reason: `Time closed for shift(s): ${shiftNames} at ${timeFormatted} IST`,
-      replyText: 'Not ok',
+      valid: true,
+      status: 'OPEN',
+      reason: `Open shift(s): ${openShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ')}`,
+      replyText: 'Ok',
       shouldReply: true,
-      shouldForward: false,
+      shouldForward: true,
+      shouldHold: false,
       timeFormatted,
-      openShifts: [],
-      closedShifts
+      openShifts,
+      futureShifts,
+      expiredShifts
     };
   }
 
-  // Valid and open in time window
+  // Case B: No shifts open right now, but FUTURE shifts exist (e.g. GB or ND or PD sent in advance)
+  if (futureShifts.length > 0) {
+    const targetShift = futureShifts[0];
+    return {
+      isBet: true,
+      valid: false,
+      status: 'FUTURE',
+      targetShift: targetShift,
+      reason: `Held for future shift: ${SHIFT_NAMES[targetShift] || targetShift.toUpperCase()} (${SHIFT_TIME_WINDOWS[targetShift]?.display})`,
+      replyText: null, // Silent hold
+      shouldReply: false,
+      shouldForward: false,
+      shouldHold: true,
+      timeFormatted,
+      openShifts,
+      futureShifts,
+      expiredShifts
+    };
+  }
+
+  // Case C: ALL shifts are EXPIRED
+  const expiredNames = expiredShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ');
   return {
     isBet: true,
-    valid: true,
-    reason: `Open shift(s): ${openShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ')}`,
-    replyText: 'Ok',
+    valid: false,
+    status: 'EXPIRED',
+    reason: `Time closed for shift(s): ${expiredNames} at ${timeFormatted} IST`,
+    replyText: 'Not ok',
     shouldReply: true,
-    shouldForward: true,
+    shouldForward: false,
+    shouldHold: false,
     timeFormatted,
     openShifts,
-    closedShifts
+    futureShifts,
+    expiredShifts
   };
 }
 
@@ -895,6 +977,28 @@ const server = http.createServer(async (req, res) => {
           console.log(`\n========================================`);
           console.log(`📩 Message from +${senderPhone}: "${text}"`);
 
+          // Case A: FUTURE Shift -> HOLD Message silently in queue!
+          if (timeCheck.shouldHold) {
+            console.log(`⏳ [HOLD QUEUE] Message from +${senderPhone} saved for ${timeCheck.targetShift.toUpperCase()}.`);
+            console.log(`ℹ️ Reason: ${timeCheck.reason} -> Will reply 'Ok' and forward when ${timeCheck.targetShift.toUpperCase()} starts.`);
+
+            heldMessages.push({
+              id: msgId || `${senderPhone}_${Date.now()}`,
+              userKey: userKey,
+              senderPhone: senderPhone,
+              text: text,
+              targetShift: timeCheck.targetShift,
+              receivedAtIST: timeFormatted,
+              receivedTimestamp: Date.now(),
+              sessionId: sessionId
+            });
+            saveHeldMessages();
+
+            console.log(`========================================`);
+            return;
+          }
+
+          // Case B: EXPIRED or INVALID -> Reply "Not ok" and STOP!
           if (!timeCheck.valid) {
             console.log(`⏱️ [NOT OK] Message from +${senderPhone} at ${timeFormatted} IST: "${text}"`);
             console.log(`❌ Reason: ${timeCheck.reason} -> Replying "${timeCheck.replyText || 'Not ok'}" and STOPPING forward.`);
@@ -911,7 +1015,7 @@ const server = http.createServer(async (req, res) => {
             return;
           }
 
-          // 4. Message is VALID in open shift window -> Reply "Ok" to Sender
+          // Case C: OPEN Shift -> Reply "Ok" to Sender & Forward!
           try {
             await sendMessage(sessionId, userKey, timeCheck.replyText || 'Ok');
             console.log(`🤖 Auto "${timeCheck.replyText || 'Ok'}" sent to ${senderPhone}`);
@@ -919,36 +1023,8 @@ const server = http.createServer(async (req, res) => {
             console.error('Error sending Ok reply:', e.message);
           }
 
-          // 5. Passing Calculation & Pure Forwarding (NO extra name/client-id text!)
-          if (calc && calc.grandTSale > 0) {
-            console.log(`📊 Valid bet message -> Calculating passing & generating photo bill...`);
-            const imgBuf = generateExactBillImageWithPassing({
-              date: todayDate,
-              userName: 'DEFAULT',
-              rateLabel: calc.rateLabel,
-              grandTSale: calc.grandTSale,
-              grandODara: calc.grandODara,
-              grandOAkhar: calc.grandOAkhar,
-              grandDebit: calc.grandDebit,
-              grandComm: calc.grandComm,
-              grandNetBalance: calc.grandNetBalance,
-              breakdown: calc.breakdown
-            });
-
-            if (imgBuf) {
-              // Forward photo bill with ONLY the exact raw message as caption
-              await sendImage(sessionId, TARGET_PHONE, imgBuf, text);
-              console.log(`🖼️ Forwarded Bill Photo + Pure Message to ${TARGET_PHONE}`);
-            } else {
-              // Forward strictly the raw message
-              await sendMessage(sessionId, TARGET_PHONE, text);
-              console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE}: "${text}"`);
-            }
-          } else {
-            // Bet message raw text forward ONLY (bina kisi name ya prefix ke)
-            await sendMessage(sessionId, TARGET_PHONE, text);
-            console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE}: "${text}"`);
-          }
+          // Process and Forward
+          await processAndForwardBet(sessionId, text, senderPhone, todayDate, todayResults);
           console.log(`========================================`);
         }
       } catch (err) {
@@ -960,6 +1036,40 @@ const server = http.createServer(async (req, res) => {
     res.end();
   }
 });
+
+async function processAndForwardBet(sessionId, text, senderPhone, todayDate, todayResults) {
+  let calc = null;
+  try {
+    calc = calculatePassingReport(text, todayResults || getTodayResults(todayDate), '90/10');
+  } catch (e) {}
+
+  if (calc && calc.grandTSale > 0) {
+    console.log(`📊 Valid bet message -> Calculating passing & generating photo bill...`);
+    const imgBuf = generateExactBillImageWithPassing({
+      date: todayDate,
+      userName: 'DEFAULT',
+      rateLabel: calc.rateLabel,
+      grandTSale: calc.grandTSale,
+      grandODara: calc.grandODara,
+      grandOAkhar: calc.grandOAkhar,
+      grandDebit: calc.grandDebit,
+      grandComm: calc.grandComm,
+      grandNetBalance: calc.grandNetBalance,
+      breakdown: calc.breakdown
+    });
+
+    if (imgBuf) {
+      await sendImage(sessionId, TARGET_PHONE, imgBuf, text);
+      console.log(`🖼️ Forwarded Bill Photo + Pure Message to ${TARGET_PHONE}`);
+    } else {
+      await sendMessage(sessionId, TARGET_PHONE, text);
+      console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE}: "${text}"`);
+    }
+  } else {
+    await sendMessage(sessionId, TARGET_PHONE, text);
+    console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE}: "${text}"`);
+  }
+}
 
 async function sendImage(sessionId, chatId, imageBuffer, caption) {
   let activeSessionId = sessionId;
@@ -1110,4 +1220,51 @@ server.listen(PORT, () => {
 
   setInterval(autoRegisterWebhooks, 10000);
   setTimeout(autoRegisterWebhooks, 3000);
+
+  // Background Checker for Held / Queued Messages (Runs every 15 seconds)
+  setInterval(async () => {
+    if (heldMessages.length === 0) return;
+
+    const { totalMinutes, timeFormatted } = getKolkataTime();
+    const curDate = formatDateDDMMYYYY();
+    const curResults = getTodayResults(curDate);
+    const remaining = [];
+
+    for (const item of heldMessages) {
+      const shiftKey = item.targetShift;
+      const status = getShiftStatus(shiftKey, totalMinutes);
+
+      if (status === 'OPEN') {
+        console.log(`\n🎉 [HOLD RELEASE] Shift ${shiftKey.toUpperCase()} is NOW OPEN at ${timeFormatted} IST! Processing held msg from +${item.senderPhone}...`);
+
+        // 1. Send "Ok" reply to sender
+        try {
+          await sendMessage(item.sessionId, item.userKey, 'Ok');
+          console.log(`🤖 Auto 'Ok' replied to +${item.senderPhone} for released ${shiftKey.toUpperCase()} bet.`);
+        } catch (e) {
+          console.error('Error replying Ok to held msg sender:', e.message);
+        }
+
+        // 2. Process Passing & Forward to Target (8005844014)
+        try {
+          await processAndForwardBet(item.sessionId, item.text, item.senderPhone, curDate, curResults);
+        } catch (eFwd) {
+          console.error('Error forwarding released held msg:', eFwd.message);
+        }
+      } else if (status === 'EXPIRED') {
+        console.log(`⚠️ [HOLD EXPIRED] Shift ${shiftKey.toUpperCase()} expired for held message from +${item.senderPhone}.`);
+        try {
+          await sendMessage(item.sessionId, item.userKey, 'Not ok');
+        } catch {}
+      } else {
+        // Still in FUTURE window -> keep in hold queue!
+        remaining.push(item);
+      }
+    }
+
+    if (remaining.length !== heldMessages.length) {
+      heldMessages = remaining;
+      saveHeldMessages();
+    }
+  }, 15000);
 });
