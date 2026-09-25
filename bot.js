@@ -129,46 +129,45 @@ function formatINR(val) {
 
 // ==================== SHIFT TIMING & CUTOFF CONFIGURATION ====================
 // Shift Time Windows (IST - Asia/Kolkata):
-// FB:  1:00 PM (13:00) to 5:50 PM (17:50) -> At 5:51 PM (17:51) it is "Not ok" & NO forward
-// NFB: 1:00 PM (13:00) to 7:00 PM (19:00)
-// GB:  1:00 PM (13:00) to 8:20 PM (20:20)
-// ND:  1:00 PM (13:00) to 11:20 PM (23:20)
-// PD:  1:00 PM (13:00) to 5:00 AM next day (05:00)
+// FB: 3:00 PM (15:00) to 5:50 PM (17:50) -> At 5:51 PM is "Not ok" & NO forward
+// GB: 6:30 PM (18:30) to 9:50 PM (21:50) -> At 9:51 PM is "Not ok" & NO forward
+// ND: 10:00 PM (22:00) to 11:30 PM (23:30) -> At 11:31 PM is "Not ok" & NO forward
+// PD: 11:00 PM (23:00) to 3:00 AM next day (03:00) -> At 3:01 AM is "Not ok" & NO forward
 const SHIFT_TIME_WINDOWS = {
   fb: {
     name: 'FARIDABAD',
-    startMin: 13 * 60 + 0,  // 1:00 PM (780 min)
-    endMin: 17 * 60 + 50,   // 5:50 PM (1070 min) -> 5:51 PM (1071 min) is Not ok
+    startMin: 15 * 60 + 0,   // 3:00 PM (900 min)
+    endMin: 17 * 60 + 50,    // 5:50 PM (1070 min) -> 5:51 PM is Not ok
     isOvernight: false,
-    display: '1:00 PM - 5:50 PM'
+    display: '3:00 PM - 5:50 PM'
   },
   nfb: {
     name: 'NEW FB',
-    startMin: 13 * 60 + 0,  // 1:00 PM (780 min)
-    endMin: 19 * 60 + 0,    // 7:00 PM (1140 min)
+    startMin: 15 * 60 + 0,   // 3:00 PM (900 min)
+    endMin: 19 * 60 + 0,     // 7:00 PM (1140 min)
     isOvernight: false,
-    display: '1:00 PM - 7:00 PM'
+    display: '3:00 PM - 7:00 PM'
   },
   gb: {
     name: 'GAZIABAAD',
-    startMin: 13 * 60 + 0,  // 1:00 PM (780 min)
-    endMin: 20 * 60 + 20,   // 8:20 PM (1220 min)
+    startMin: 18 * 60 + 30,  // 6:30 PM (1110 min)
+    endMin: 21 * 60 + 50,    // 9:50 PM (1310 min) -> 9:51 PM is Not ok
     isOvernight: false,
-    display: '1:00 PM - 8:20 PM'
+    display: '6:30 PM - 9:50 PM'
   },
   nd: {
     name: 'GALI',
-    startMin: 13 * 60 + 0,  // 1:00 PM (780 min)
-    endMin: 23 * 60 + 20,   // 11:20 PM (1400 min)
+    startMin: 22 * 60 + 0,   // 10:00 PM (1320 min)
+    endMin: 23 * 60 + 30,    // 11:30 PM (1410 min) -> 11:31 PM is Not ok
     isOvernight: false,
-    display: '1:00 PM - 11:20 PM'
+    display: '10:00 PM - 11:30 PM'
   },
   pd: {
     name: 'DESHAWER',
-    startMin: 13 * 60 + 0,  // 1:00 PM (780 min)
-    endMin: 5 * 60 + 0,     // 5:00 AM next morning (300 min)
+    startMin: 23 * 60 + 0,   // 11:00 PM (1380 min)
+    endMin: 3 * 60 + 0,      // 3:00 AM next morning (180 min) -> 3:01 AM is Not ok
     isOvernight: true,
-    display: '1:00 PM - 5:00 AM'
+    display: '11:00 PM - 3:00 AM'
   }
 };
 
@@ -202,6 +201,36 @@ function isShiftTimeOpen(catKey, totalMinutes) {
   }
 }
 
+function getActiveShift(totalMinutes) {
+  for (const k of ['fb', 'gb', 'nd', 'pd', 'nfb']) {
+    if (isShiftTimeOpen(k, totalMinutes)) return k;
+  }
+  return null;
+}
+
+function isBetMessage(text) {
+  if (!text || typeof text !== 'string') return false;
+  const clean = text.trim();
+  
+  // Must contain numbers
+  if (!/\d/.test(clean)) return false;
+
+  // 1. Bracket containing numbers e.g. (20), (500), [100], {50}
+  const hasBracketAmount = /[\(\[\{]\s*\d+\s*[\)\]\}]/.test(clean);
+  // 2. Multiplier / into notation e.g. 12*50, 12 into 50, 12x50, 12=50, 12-50, 12/50
+  const hasIntoAmount = /\b\d{1,3}\s*(?:into|int|in|x|\*|=|-|\/)\s*\d{1,6}\b/i.test(clean);
+  // 3. Shift keyword present with numbers e.g. "12,12 fb", "12.45 gb", "25 nd"
+  const hasShift = /\b(fb|f\.b|faridabad|fd|gb|g\.b|ghaziabad|gzb|gd|nd|n\.d|gali|pd|p\.d|ds|d\.s|desawar|nfb)\b/i.test(clean);
+  // 4. Haruf / Andar-Bahar keywords e.g. "andar 1(100)", "bahar 2(50)"
+  const hasHaruf = /\b(andar|bahar|a|b|ab|abc|all|cross|r|palti)\b/i.test(clean);
+
+  if (hasBracketAmount || hasIntoAmount) return true;
+  if (hasShift && /\d/.test(clean)) return true;
+  if (hasHaruf && /\d/.test(clean)) return true;
+
+  return false;
+}
+
 function detectShiftsInText(text) {
   if (!text || typeof text !== 'string') return [];
   const clean = text.toLowerCase();
@@ -221,7 +250,20 @@ function detectShiftsInText(text) {
 function checkMessageTimeValidity(text, calc) {
   const { hour, minute, totalMinutes, timeFormatted } = getKolkataTime();
   
-  // Find all shifts referenced in text or calculation
+  // 1. Check if it's a valid bet message
+  if (!isBetMessage(text)) {
+    return {
+      isBet: false,
+      valid: false,
+      reason: 'Non-bet casual message (ignored)',
+      replyText: null,
+      shouldReply: false,
+      shouldForward: false,
+      timeFormatted
+    };
+  }
+
+  // 2. Find shifts in text or calculation
   const shiftsFound = new Set(detectShiftsInText(text));
   if (calc && calc.breakdown) {
     for (const b of calc.breakdown) {
@@ -231,21 +273,28 @@ function checkMessageTimeValidity(text, calc) {
     }
   }
 
-  const shiftList = Array.from(shiftsFound);
+  let shiftList = Array.from(shiftsFound);
 
-  // If no shifts are mentioned/calculated (e.g. general conversation "hi", "payment done", etc.)
+  // If no explicit shift written (e.g. "12,12(20)"), check current active shift
   if (shiftList.length === 0) {
-    return {
-      valid: true,
-      reason: 'General message',
-      replyText: 'Ok',
-      timeFormatted,
-      openShifts: [],
-      closedShifts: []
-    };
+    const activeShift = getActiveShift(totalMinutes);
+    if (activeShift) {
+      shiftList = [activeShift];
+    } else {
+      return {
+        isBet: true,
+        valid: false,
+        reason: `No shift currently open at ${timeFormatted} IST`,
+        replyText: 'Not ok',
+        shouldReply: true,
+        shouldForward: false,
+        timeFormatted,
+        closedShifts: []
+      };
+    }
   }
 
-  // Check each shift's timing status
+  // 3. Check each shift timing
   const openShifts = [];
   const closedShifts = [];
 
@@ -261,20 +310,26 @@ function checkMessageTimeValidity(text, calc) {
   if (openShifts.length === 0) {
     const shiftNames = closedShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ');
     return {
+      isBet: true,
       valid: false,
-      reason: `Time expired for shift(s): ${shiftNames} at ${timeFormatted} IST (Valid FB: 1:00 PM to 5:50 PM)`,
+      reason: `Time closed for shift(s): ${shiftNames} at ${timeFormatted} IST`,
       replyText: 'Not ok',
+      shouldReply: true,
+      shouldForward: false,
       timeFormatted,
       openShifts: [],
       closedShifts
     };
   }
 
-  // At least one shift is open
+  // Valid and open in time window
   return {
+    isBet: true,
     valid: true,
-    reason: `Open shifts: ${openShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ')}`,
+    reason: `Open shift(s): ${openShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ')}`,
     replyText: 'Ok',
+    shouldReply: true,
+    shouldForward: true,
     timeFormatted,
     openShifts,
     closedShifts
@@ -956,35 +1011,43 @@ async function startWhatsAppBot() {
         if (isGroup) continue;
         if (remoteJid.includes(TARGET_PHONE_RAW)) continue;
 
-        console.log(`\n========================================`);
-        console.log(`📩 Message from +${senderPhone}: "${text}"`);
-
         // 2. Passing Calculation
         const calc = calculatePassingReport(text, todayResults, '90/10');
 
-        // 3. Shift Timing & Cutoff Validation (FB: 1:00 PM - 5:50 PM, after 5:51 PM is Not ok)
+        // 3. Shift Timing & Cutoff Validation (FB: 3pm-5:50pm, GB: 6:30pm-9:50pm, ND: 10pm-11:30pm, PD: 11pm-3am)
         const timeCheck = checkMessageTimeValidity(text, calc);
         const { timeFormatted } = getKolkataTime();
 
+        // If it is a non-bet casual message (e.g. "hi", "hello", "bol", "by") -> DO NOT reply Ok, DO NOT forward
+        if (!timeCheck.isBet) {
+          console.log(`💬 Casual message from +${senderPhone}: "${text}" -> Ignored (No Ok, No Forward).`);
+          addLog('ignore', `Casual msg "${text}" from +${senderPhone} ignored`);
+          continue;
+        }
+
+        console.log(`\n========================================`);
+        console.log(`📩 Valid Bet Message from +${senderPhone}: "${text}"`);
+
         if (!timeCheck.valid) {
-          console.log(`⏱️ [CUTOFF / TIME EXPIRED] Message from +${senderPhone} at ${timeFormatted} IST: "${text}"`);
+          console.log(`⏱️ [CUTOFF / CLOSED] Bet from +${senderPhone} at ${timeFormatted} IST: "${text}"`);
           console.log(`❌ Reason: ${timeCheck.reason} -> Replying "${timeCheck.replyText || 'Not ok'}" and STOPPING forward.`);
           
-          try {
-            await sock.sendMessage(remoteJid, { text: timeCheck.replyText || 'Not ok' });
-            console.log(`🤖 Auto "${timeCheck.replyText || 'Not ok'}" replied to +${senderPhone}`);
-            addLog('reply', `Auto '${timeCheck.replyText || 'Not ok'}' -> +${senderPhone} (${timeCheck.reason})`);
-          } catch (e) {
-            console.error('Error sending Not ok reply:', e.message);
+          if (timeCheck.shouldReply && timeCheck.replyText) {
+            try {
+              await sock.sendMessage(remoteJid, { text: timeCheck.replyText });
+              console.log(`🤖 Auto "${timeCheck.replyText}" replied to +${senderPhone}`);
+              addLog('reply', `Auto '${timeCheck.replyText}' -> +${senderPhone} (${timeCheck.reason})`);
+            } catch (e) {
+              console.error('Error sending Not ok reply:', e.message);
+            }
           }
 
-          // Strict requirement: DO NOT forward expired messages!
-          console.log(`🚫 Forward blocked due to shift time expiration.`);
+          console.log(`🚫 Forward blocked due to shift cutoff.`);
           console.log(`========================================`);
           continue;
         }
 
-        // 4. Message is VALID -> Reply "Ok" to Sender
+        // 4. Message is VALID in open shift window -> Reply "Ok" to Sender
         try {
           await sock.sendMessage(remoteJid, { text: timeCheck.replyText || 'Ok' });
           console.log(`🤖 Auto "${timeCheck.replyText || 'Ok'}" replied to +${senderPhone}`);
@@ -1021,7 +1084,7 @@ async function startWhatsAppBot() {
             addLog('forward', `Forwarded "${text}" -> ${TARGET_PHONE_RAW}`);
           }
         } else {
-          // Non-betting message: forward ONLY the exact text sent by the user
+          // Bet message raw text forward ONLY (bina kisi name ya prefix ke)
           await forwardToTarget({ text: text });
           console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE_RAW}: "${text}"`);
           addLog('forward', `Forwarded "${text}" -> ${TARGET_PHONE_RAW}`);
@@ -1166,11 +1229,10 @@ app.get('/', (req, res) => {
             </tr>
           </thead>
           <tbody id="shiftTableBody">
-            <tr><td><b>FB (Faridabad)</b></td><td>1:00 PM - 5:50 PM</td><td>5:50 PM tak Ok+Forward | 5:51 PM pe Not ok</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
-            <tr><td><b>NFB (New FB)</b></td><td>1:00 PM - 7:00 PM</td><td>7:00 PM tak Ok+Forward</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
-            <tr><td><b>GB (Ghaziabad)</b></td><td>1:00 PM - 8:20 PM</td><td>8:20 PM tak Ok+Forward</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
-            <tr><td><b>ND (Gali)</b></td><td>1:00 PM - 11:20 PM</td><td>11:20 PM tak Ok+Forward</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
-            <tr><td><b>PD (Desawar)</b></td><td>1:00 PM - 5:00 AM</td><td>5:00 AM tak Ok+Forward</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
+            <tr><td><b>FB (Faridabad)</b></td><td>3:00 PM - 5:50 PM</td><td>5:50 PM tak Ok+Forward | 5:51 PM pe Not ok</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
+            <tr><td><b>GB (Ghaziabad)</b></td><td>6:30 PM - 9:50 PM</td><td>9:50 PM tak Ok+Forward | 9:51 PM pe Not ok</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
+            <tr><td><b>ND (Gali)</b></td><td>10:00 PM - 11:30 PM</td><td>11:30 PM tak Ok+Forward | 11:31 PM pe Not ok</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
+            <tr><td><b>PD (Desawar)</b></td><td>11:00 PM - 3:00 AM</td><td>3:00 AM tak Ok+Forward | 3:01 AM pe Not ok</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
           </tbody>
         </table>
       </div>
