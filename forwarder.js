@@ -98,6 +98,155 @@ function formatINR(val) {
   return Number(val || 0).toLocaleString('en-IN');
 }
 
+// ==================== SHIFT TIMING & CUTOFF CONFIGURATION ====================
+// Shift Time Windows (IST - Asia/Kolkata):
+// FB:  1:00 PM (13:00) to 5:50 PM (17:50) -> At 5:51 PM (17:51) it is "Not ok" & NO forward
+// NFB: 1:00 PM (13:00) to 7:00 PM (19:00)
+// GB:  1:00 PM (13:00) to 8:20 PM (20:20)
+// ND:  1:00 PM (13:00) to 11:20 PM (23:20)
+// PD:  1:00 PM (13:00) to 5:00 AM next day (05:00)
+const SHIFT_TIME_WINDOWS = {
+  fb: {
+    name: 'FARIDABAD',
+    startMin: 13 * 60 + 0,  // 1:00 PM (780 min)
+    endMin: 17 * 60 + 50,   // 5:50 PM (1070 min) -> 5:51 PM is Not ok
+    isOvernight: false,
+    display: '1:00 PM - 5:50 PM'
+  },
+  nfb: {
+    name: 'NEW FB',
+    startMin: 13 * 60 + 0,  // 1:00 PM (780 min)
+    endMin: 19 * 60 + 0,    // 7:00 PM (1140 min)
+    isOvernight: false,
+    display: '1:00 PM - 7:00 PM'
+  },
+  gb: {
+    name: 'GAZIABAAD',
+    startMin: 13 * 60 + 0,  // 1:00 PM (780 min)
+    endMin: 20 * 60 + 20,   // 8:20 PM (1220 min)
+    isOvernight: false,
+    display: '1:00 PM - 8:20 PM'
+  },
+  nd: {
+    name: 'GALI',
+    startMin: 13 * 60 + 0,  // 1:00 PM (780 min)
+    endMin: 23 * 60 + 20,   // 11:20 PM (1400 min)
+    isOvernight: false,
+    display: '1:00 PM - 11:20 PM'
+  },
+  pd: {
+    name: 'DESHAWER',
+    startMin: 13 * 60 + 0,  // 1:00 PM (780 min)
+    endMin: 5 * 60 + 0,     // 5:00 AM next morning (300 min)
+    isOvernight: true,
+    display: '1:00 PM - 5:00 AM'
+  }
+};
+
+function getKolkataTime() {
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+  const parts = formatter.formatToParts(new Date());
+  let hour = 0, minute = 0, second = 0;
+  for (const p of parts) {
+    if (p.type === 'hour') hour = parseInt(p.value, 10);
+    if (p.type === 'minute') minute = parseInt(p.value, 10);
+    if (p.type === 'second') second = parseInt(p.value, 10);
+  }
+  const totalMinutes = hour * 60 + minute;
+  const timeFormatted = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  return { hour, minute, second, totalMinutes, timeFormatted };
+}
+
+function isShiftTimeOpen(catKey, totalMinutes) {
+  const cfg = SHIFT_TIME_WINDOWS[catKey.toLowerCase()];
+  if (!cfg) return true;
+  if (cfg.isOvernight) {
+    return totalMinutes >= cfg.startMin || totalMinutes <= cfg.endMin;
+  } else {
+    return totalMinutes >= cfg.startMin && totalMinutes <= cfg.endMin;
+  }
+}
+
+function detectShiftsInText(text) {
+  if (!text || typeof text !== 'string') return [];
+  const clean = text.toLowerCase();
+  const matched = new Set();
+  for (const k of CATEGORY_KEYS) {
+    for (const a of CATEGORIES_MAP[k]) {
+      const rx = new RegExp('\\b' + a.replace(/\./g, '\\.?') + '\\b', 'i');
+      if (rx.test(clean)) {
+        matched.add(k);
+        break;
+      }
+    }
+  }
+  return Array.from(matched);
+}
+
+function checkMessageTimeValidity(text, calc) {
+  const { hour, minute, totalMinutes, timeFormatted } = getKolkataTime();
+  
+  const shiftsFound = new Set(detectShiftsInText(text));
+  if (calc && calc.breakdown) {
+    for (const b of calc.breakdown) {
+      if (b.tSale > 0 && b.key) {
+        shiftsFound.add(b.key.toLowerCase());
+      }
+    }
+  }
+
+  const shiftList = Array.from(shiftsFound);
+
+  if (shiftList.length === 0) {
+    return {
+      valid: true,
+      reason: 'General message',
+      replyText: 'Ok',
+      timeFormatted,
+      openShifts: [],
+      closedShifts: []
+    };
+  }
+
+  const openShifts = [];
+  const closedShifts = [];
+
+  for (const s of shiftList) {
+    if (isShiftTimeOpen(s, totalMinutes)) {
+      openShifts.push(s);
+    } else {
+      closedShifts.push(s);
+    }
+  }
+
+  if (openShifts.length === 0) {
+    const shiftNames = closedShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ');
+    return {
+      valid: false,
+      reason: `Time expired for shift(s): ${shiftNames} at ${timeFormatted} IST (Valid FB: 1:00 PM to 5:50 PM)`,
+      replyText: 'Not ok',
+      timeFormatted,
+      openShifts: [],
+      closedShifts
+    };
+  }
+
+  return {
+    valid: true,
+    reason: `Open shifts: ${openShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ')}`,
+    replyText: 'Ok',
+    timeFormatted,
+    openShifts,
+    closedShifts
+  };
+}
+
 // Result / Find Message Parser (extract winning numbers from group or direct messages)
 function parseResultMessage(text) {
   if (!text || typeof text !== 'string') return [];
@@ -674,12 +823,38 @@ const server = http.createServer(async (req, res) => {
           const userKey = from.replace('@s.whatsapp.net', '@c.us');
           const todayResults = getTodayResults(todayDate);
 
-          // 2. Direct Auto-Reply "Ok" to Sender
-          await sendMessage(sessionId, userKey, `Ok`);
-          console.log(`🤖 Auto 'Ok' sent to ${senderPhone}`);
-
-          // 3. Passing Calculation & Pure Forwarding (NO extra name/client-id text!)
+          // 2. Passing Calculation
           const calc = calculatePassingReport(text, todayResults, '90/10');
+
+          // 3. Shift Timing & Cutoff Validation (FB: 1:00 PM - 5:50 PM, after 5:51 PM is Not ok)
+          const timeCheck = checkMessageTimeValidity(text, calc);
+          const { timeFormatted } = getKolkataTime();
+
+          if (!timeCheck.valid) {
+            console.log(`⏱️ [CUTOFF / TIME EXPIRED] Message from +${senderPhone} at ${timeFormatted} IST: "${text}"`);
+            console.log(`❌ Reason: ${timeCheck.reason} -> Replying "${timeCheck.replyText || 'Not ok'}" and STOPPING forward.`);
+            
+            try {
+              await sendMessage(sessionId, userKey, timeCheck.replyText || 'Not ok');
+              console.log(`🤖 Auto "${timeCheck.replyText || 'Not ok'}" sent to ${senderPhone}`);
+            } catch (e) {
+              console.error('Error sending Not ok reply:', e.message);
+            }
+
+            console.log(`🚫 Forward blocked due to shift time expiration.`);
+            console.log(`========================================`);
+            return;
+          }
+
+          // 4. Message is VALID -> Reply "Ok" to Sender
+          try {
+            await sendMessage(sessionId, userKey, timeCheck.replyText || 'Ok');
+            console.log(`🤖 Auto "${timeCheck.replyText || 'Ok'}" sent to ${senderPhone}`);
+          } catch (e) {
+            console.error('Error sending Ok reply:', e.message);
+          }
+
+          // 5. Passing Calculation & Pure Forwarding (NO extra name/client-id text!)
           if (calc && calc.grandTSale > 0) {
             console.log(`📊 Valid bet message -> Calculating passing & generating photo bill...`);
             const imgBuf = generateExactBillImageWithPassing({
@@ -709,7 +884,6 @@ const server = http.createServer(async (req, res) => {
             await sendMessage(sessionId, TARGET_PHONE, text);
             console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE}: "${text}"`);
           }
-          console.log(`========================================`);
           console.log(`========================================`);
         }
       } catch (err) {

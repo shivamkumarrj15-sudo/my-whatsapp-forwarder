@@ -127,6 +127,160 @@ function formatINR(val) {
   return Number(val || 0).toLocaleString('en-IN');
 }
 
+// ==================== SHIFT TIMING & CUTOFF CONFIGURATION ====================
+// Shift Time Windows (IST - Asia/Kolkata):
+// FB:  1:00 PM (13:00) to 5:50 PM (17:50) -> At 5:51 PM (17:51) it is "Not ok" & NO forward
+// NFB: 1:00 PM (13:00) to 7:00 PM (19:00)
+// GB:  1:00 PM (13:00) to 8:20 PM (20:20)
+// ND:  1:00 PM (13:00) to 11:20 PM (23:20)
+// PD:  1:00 PM (13:00) to 5:00 AM next day (05:00)
+const SHIFT_TIME_WINDOWS = {
+  fb: {
+    name: 'FARIDABAD',
+    startMin: 13 * 60 + 0,  // 1:00 PM (780 min)
+    endMin: 17 * 60 + 50,   // 5:50 PM (1070 min) -> 5:51 PM (1071 min) is Not ok
+    isOvernight: false,
+    display: '1:00 PM - 5:50 PM'
+  },
+  nfb: {
+    name: 'NEW FB',
+    startMin: 13 * 60 + 0,  // 1:00 PM (780 min)
+    endMin: 19 * 60 + 0,    // 7:00 PM (1140 min)
+    isOvernight: false,
+    display: '1:00 PM - 7:00 PM'
+  },
+  gb: {
+    name: 'GAZIABAAD',
+    startMin: 13 * 60 + 0,  // 1:00 PM (780 min)
+    endMin: 20 * 60 + 20,   // 8:20 PM (1220 min)
+    isOvernight: false,
+    display: '1:00 PM - 8:20 PM'
+  },
+  nd: {
+    name: 'GALI',
+    startMin: 13 * 60 + 0,  // 1:00 PM (780 min)
+    endMin: 23 * 60 + 20,   // 11:20 PM (1400 min)
+    isOvernight: false,
+    display: '1:00 PM - 11:20 PM'
+  },
+  pd: {
+    name: 'DESHAWER',
+    startMin: 13 * 60 + 0,  // 1:00 PM (780 min)
+    endMin: 5 * 60 + 0,     // 5:00 AM next morning (300 min)
+    isOvernight: true,
+    display: '1:00 PM - 5:00 AM'
+  }
+};
+
+function getKolkataTime() {
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+  const parts = formatter.formatToParts(new Date());
+  let hour = 0, minute = 0, second = 0;
+  for (const p of parts) {
+    if (p.type === 'hour') hour = parseInt(p.value, 10);
+    if (p.type === 'minute') minute = parseInt(p.value, 10);
+    if (p.type === 'second') second = parseInt(p.value, 10);
+  }
+  const totalMinutes = hour * 60 + minute;
+  const timeFormatted = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  return { hour, minute, second, totalMinutes, timeFormatted };
+}
+
+function isShiftTimeOpen(catKey, totalMinutes) {
+  const cfg = SHIFT_TIME_WINDOWS[catKey.toLowerCase()];
+  if (!cfg) return true;
+  if (cfg.isOvernight) {
+    return totalMinutes >= cfg.startMin || totalMinutes <= cfg.endMin;
+  } else {
+    return totalMinutes >= cfg.startMin && totalMinutes <= cfg.endMin;
+  }
+}
+
+function detectShiftsInText(text) {
+  if (!text || typeof text !== 'string') return [];
+  const clean = text.toLowerCase();
+  const matched = new Set();
+  for (const k of CATEGORY_KEYS) {
+    for (const a of CATEGORIES_MAP[k]) {
+      const rx = new RegExp('\\b' + a.replace(/\./g, '\\.?') + '\\b', 'i');
+      if (rx.test(clean)) {
+        matched.add(k);
+        break;
+      }
+    }
+  }
+  return Array.from(matched);
+}
+
+function checkMessageTimeValidity(text, calc) {
+  const { hour, minute, totalMinutes, timeFormatted } = getKolkataTime();
+  
+  // Find all shifts referenced in text or calculation
+  const shiftsFound = new Set(detectShiftsInText(text));
+  if (calc && calc.breakdown) {
+    for (const b of calc.breakdown) {
+      if (b.tSale > 0 && b.key) {
+        shiftsFound.add(b.key.toLowerCase());
+      }
+    }
+  }
+
+  const shiftList = Array.from(shiftsFound);
+
+  // If no shifts are mentioned/calculated (e.g. general conversation "hi", "payment done", etc.)
+  if (shiftList.length === 0) {
+    return {
+      valid: true,
+      reason: 'General message',
+      replyText: 'Ok',
+      timeFormatted,
+      openShifts: [],
+      closedShifts: []
+    };
+  }
+
+  // Check each shift's timing status
+  const openShifts = [];
+  const closedShifts = [];
+
+  for (const s of shiftList) {
+    if (isShiftTimeOpen(s, totalMinutes)) {
+      openShifts.push(s);
+    } else {
+      closedShifts.push(s);
+    }
+  }
+
+  // If ALL specified shifts are closed / expired
+  if (openShifts.length === 0) {
+    const shiftNames = closedShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ');
+    return {
+      valid: false,
+      reason: `Time expired for shift(s): ${shiftNames} at ${timeFormatted} IST (Valid FB: 1:00 PM to 5:50 PM)`,
+      replyText: 'Not ok',
+      timeFormatted,
+      openShifts: [],
+      closedShifts
+    };
+  }
+
+  // At least one shift is open
+  return {
+    valid: true,
+    reason: `Open shifts: ${openShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ')}`,
+    replyText: 'Ok',
+    timeFormatted,
+    openShifts,
+    closedShifts
+  };
+}
+
 // Result / Find Message Parser
 function parseResultMessage(text) {
   if (!text || typeof text !== 'string') return [];
@@ -805,17 +959,41 @@ async function startWhatsAppBot() {
         console.log(`\n========================================`);
         console.log(`📩 Message from +${senderPhone}: "${text}"`);
 
-        // 2. Direct Auto-Reply "Ok" to Sender
+        // 2. Passing Calculation
+        const calc = calculatePassingReport(text, todayResults, '90/10');
+
+        // 3. Shift Timing & Cutoff Validation (FB: 1:00 PM - 5:50 PM, after 5:51 PM is Not ok)
+        const timeCheck = checkMessageTimeValidity(text, calc);
+        const { timeFormatted } = getKolkataTime();
+
+        if (!timeCheck.valid) {
+          console.log(`⏱️ [CUTOFF / TIME EXPIRED] Message from +${senderPhone} at ${timeFormatted} IST: "${text}"`);
+          console.log(`❌ Reason: ${timeCheck.reason} -> Replying "${timeCheck.replyText || 'Not ok'}" and STOPPING forward.`);
+          
+          try {
+            await sock.sendMessage(remoteJid, { text: timeCheck.replyText || 'Not ok' });
+            console.log(`🤖 Auto "${timeCheck.replyText || 'Not ok'}" replied to +${senderPhone}`);
+            addLog('reply', `Auto '${timeCheck.replyText || 'Not ok'}' -> +${senderPhone} (${timeCheck.reason})`);
+          } catch (e) {
+            console.error('Error sending Not ok reply:', e.message);
+          }
+
+          // Strict requirement: DO NOT forward expired messages!
+          console.log(`🚫 Forward blocked due to shift time expiration.`);
+          console.log(`========================================`);
+          continue;
+        }
+
+        // 4. Message is VALID -> Reply "Ok" to Sender
         try {
-          await sock.sendMessage(remoteJid, { text: `Ok` });
-          console.log(`🤖 Auto "Ok" replied to +${senderPhone}`);
-          addLog('reply', `Auto 'Ok' -> +${senderPhone}`);
+          await sock.sendMessage(remoteJid, { text: timeCheck.replyText || 'Ok' });
+          console.log(`🤖 Auto "${timeCheck.replyText || 'Ok'}" replied to +${senderPhone}`);
+          addLog('reply', `Auto '${timeCheck.replyText || 'Ok'}' -> +${senderPhone}`);
         } catch (e) {
           console.error('Error sending Ok reply:', e.message);
         }
 
-        // 3. Passing Calculation & Pure Forwarding (NO extra name/client-id text!)
-        const calc = calculatePassingReport(text, todayResults, '90/10');
+        // 5. Passing Report & Pure Forwarding to TARGET (8005844014) (NO extra name/client-id text!)
         if (calc && calc.grandTSale > 0) {
           console.log(`📊 Valid bet message -> Calculating passing & generating photo bill...`);
           const imgBuf = generateExactBillImageWithPassing({
@@ -894,7 +1072,18 @@ app.get('/api/health', (req, res) => {
 });
 
 app.get('/api/status', (req, res) => {
-  res.json(botState);
+  const { hour, minute, totalMinutes, timeFormatted } = getKolkataTime();
+  const shifts = Object.keys(SHIFT_TIME_WINDOWS).map(k => ({
+    key: k,
+    name: SHIFT_TIME_WINDOWS[k].name,
+    display: SHIFT_TIME_WINDOWS[k].display,
+    isOpen: isShiftTimeOpen(k, totalMinutes)
+  }));
+  res.json({
+    ...botState,
+    kolkataTime: timeFormatted,
+    shifts
+  });
 });
 
 app.get('/api/results', (req, res) => {
@@ -925,6 +1114,8 @@ app.get('/', (req, res) => {
     body { background-color: #0b1329; color: #e2e8f0; font-family: 'Segoe UI', system-ui, sans-serif; }
     .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; }
     .badge-status { font-size: 0.9rem; padding: 6px 12px; }
+    .shift-badge-open { background: #059669; color: #fff; font-size: 0.75rem; padding: 3px 8px; border-radius: 6px; }
+    .shift-badge-closed { background: #dc2626; color: #fff; font-size: 0.75rem; padding: 3px 8px; border-radius: 6px; }
   </style>
 </head>
 <body class="p-4">
@@ -934,8 +1125,9 @@ app.get('/', (req, res) => {
         <h3 class="fw-bold text-teal mb-0" style="color: #2dd4bf;"><i class="fa-solid fa-bolt me-2"></i>TSC Passing Bot Dashboard</h3>
         <p class="text-secondary small mb-0">Live WhatsApp Forwarder & Result Passing Engine</p>
       </div>
-      <div>
+      <div class="text-end">
         <span id="statusBadge" class="badge bg-secondary badge-status">Connecting...</span>
+        <div id="kolkataClock" class="text-info small mt-1 fw-bold">IST: --:--</div>
       </div>
     </div>
     
@@ -954,9 +1146,33 @@ app.get('/', (req, res) => {
       </div>
       <div class="col-md-4">
         <div class="card p-3">
-          <div class="text-secondary small">Target Phone</div>
+          <div class="text-secondary small">Forward Target</div>
           <div class="fs-5 fw-bold text-info mt-1">+91 80058 44014</div>
         </div>
+      </div>
+    </div>
+
+    <!-- Shift Timings Window Card -->
+    <div class="card p-3 mb-4">
+      <h6 class="fw-bold text-warning mb-2"><i class="fa-solid fa-clock me-2"></i>Shift Timing Validation & Cutoffs (IST)</h6>
+      <div class="table-responsive">
+        <table class="table table-dark table-sm table-bordered mb-0 align-middle text-center" style="font-size: 13px;">
+          <thead>
+            <tr class="table-secondary text-dark">
+              <th>Shift</th>
+              <th>Valid Window</th>
+              <th>Rule (Cutoff)</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="shiftTableBody">
+            <tr><td><b>FB (Faridabad)</b></td><td>1:00 PM - 5:50 PM</td><td>5:50 PM tak Ok+Forward | 5:51 PM pe Not ok</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
+            <tr><td><b>NFB (New FB)</b></td><td>1:00 PM - 7:00 PM</td><td>7:00 PM tak Ok+Forward</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
+            <tr><td><b>GB (Ghaziabad)</b></td><td>1:00 PM - 8:20 PM</td><td>8:20 PM tak Ok+Forward</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
+            <tr><td><b>ND (Gali)</b></td><td>1:00 PM - 11:20 PM</td><td>11:20 PM tak Ok+Forward</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
+            <tr><td><b>PD (Desawar)</b></td><td>1:00 PM - 5:00 AM</td><td>5:00 AM tak Ok+Forward</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
@@ -995,6 +1211,20 @@ app.get('/', (req, res) => {
           }
         }
         document.getElementById('msgCount').innerText = data.totalMessagesProcessed || 0;
+        if (data.kolkataTime) {
+          document.getElementById('kolkataClock').innerText = 'IST: ' + data.kolkataTime;
+        }
+
+        if (data.shifts && data.shifts.length > 0) {
+          const rowsHtml = data.shifts.map(function(s) {
+            const statusHtml = s.isOpen 
+              ? '<span class="shift-badge-open"><i class="fa-solid fa-check me-1"></i>OPEN (Ok)</span>'
+              : '<span class="shift-badge-closed"><i class="fa-solid fa-ban me-1"></i>CLOSED (Not ok)</span>';
+            const ruleText = s.key === 'fb' ? '5:50 PM tak Ok+Forward | 5:51 PM pe Not ok' : s.display + ' tak Ok+Forward';
+            return '<tr><td><b>' + s.name + ' (' + s.key.toUpperCase() + ')</b></td><td>' + s.display + '</td><td>' + ruleText + '</td><td>' + statusHtml + '</td></tr>';
+          }).join('');
+          document.getElementById('shiftTableBody').innerHTML = rowsHtml;
+        }
         
         if (data.recentLogs && data.recentLogs.length > 0) {
           document.getElementById('logsContainer').innerHTML = data.recentLogs.map(function(l) {
