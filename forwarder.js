@@ -226,20 +226,20 @@ function checkMessageTimeValidity(text, calc) {
     return {
       isBet: false,
       valid: false,
-      reason: 'Non-bet casual message (ignored)',
-      replyText: null,
-      shouldReply: false,
+      reason: 'Not a valid bet message format',
+      replyText: 'Not ok',
+      shouldReply: true,
       shouldForward: false,
       timeFormatted
     };
   }
 
-  // 2. Find shifts in text or calculation
+  // 2. Find shifts in text or calculation (breakdown is an Object: breakdown[k] = r)
   const shiftsFound = new Set(detectShiftsInText(text));
   if (calc && calc.breakdown) {
-    for (const b of calc.breakdown) {
-      if (b.tSale > 0 && b.key) {
-        shiftsFound.add(b.key.toLowerCase());
+    for (const key of Object.keys(calc.breakdown)) {
+      if (calc.breakdown[key] && calc.breakdown[key].tSale > 0) {
+        shiftsFound.add(key.toLowerCase());
       }
     }
   }
@@ -881,35 +881,32 @@ const server = http.createServer(async (req, res) => {
           const todayResults = getTodayResults(todayDate);
 
           // 2. Passing Calculation
-          const calc = calculatePassingReport(text, todayResults, '90/10');
+          let calc = null;
+          try {
+            calc = calculatePassingReport(text, todayResults, '90/10');
+          } catch (eCalc) {
+            console.error('Passing calculation error:', eCalc.message);
+          }
 
-          // 3. Shift Timing & Cutoff Validation (FB: 3pm-5:50pm, GB: 6:30pm-9:50pm, ND: 10pm-11:30pm, PD: 11pm-3am)
+          // 3. Shift Timing & Format Validation (FB: 3pm-5:50pm, GB: 6:30pm-9:50pm, ND: 10pm-11:30pm, PD: 11pm-3am)
           const timeCheck = checkMessageTimeValidity(text, calc);
           const { timeFormatted } = getKolkataTime();
 
-          // Ignore non-bet casual messages (e.g. "hi", "bol", "by")
-          if (!timeCheck.isBet) {
-            console.log(`💬 Casual message from +${senderPhone}: "${text}" -> Ignored (No Ok, No Forward).`);
-            return;
-          }
-
           console.log(`\n========================================`);
-          console.log(`📩 Valid Bet Message from +${senderPhone}: "${text}"`);
+          console.log(`📩 Message from +${senderPhone}: "${text}"`);
 
           if (!timeCheck.valid) {
-            console.log(`⏱️ [CUTOFF / CLOSED] Message from +${senderPhone} at ${timeFormatted} IST: "${text}"`);
+            console.log(`⏱️ [NOT OK] Message from +${senderPhone} at ${timeFormatted} IST: "${text}"`);
             console.log(`❌ Reason: ${timeCheck.reason} -> Replying "${timeCheck.replyText || 'Not ok'}" and STOPPING forward.`);
             
-            if (timeCheck.shouldReply && timeCheck.replyText) {
-              try {
-                await sendMessage(sessionId, userKey, timeCheck.replyText);
-                console.log(`🤖 Auto "${timeCheck.replyText}" sent to ${senderPhone}`);
-              } catch (e) {
-                console.error('Error sending Not ok reply:', e.message);
-              }
+            try {
+              await sendMessage(sessionId, userKey, timeCheck.replyText || 'Not ok');
+              console.log(`🤖 Auto "${timeCheck.replyText || 'Not ok'}" sent to ${senderPhone}`);
+            } catch (e) {
+              console.error('Error sending Not ok reply:', e.message);
             }
 
-            console.log(`🚫 Forward blocked due to shift cutoff.`);
+            console.log(`🚫 Forward blocked (Invalid format or Shift closed).`);
             console.log(`========================================`);
             return;
           }
