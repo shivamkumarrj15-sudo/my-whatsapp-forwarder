@@ -243,9 +243,9 @@ function isBetMessage(text) {
   // 2. Multiplier / into notation e.g. 12*50, 12 into 50, 12x50, 12=50, 12-50, 12/50
   const hasIntoAmount = /\b\d{1,3}\s*(?:into|int|in|x|\*|=|-|\/)\s*\d{1,6}\b/i.test(clean);
   // 3. Shift keyword present with numbers e.g. "12,12 fb", "12.45 gb", "25 nd"
-  const hasShift = /\b(fb|f\.b|faridabad|fd|gb|g\.b|ghaziabad|gzb|gd|nd|n\.d|gali|pd|p\.d|ds|d\.s|desawar|nfb)\b/i.test(clean);
+  const hasShift = /(?:^|[^a-z0-9])(fb|f\.b|faridabad|fd|gb|g\.b|ghaziabad|gzb|gd|nd|n\.d|gali|pd|p\.d|ds|d\.s|desawar|nfb)(?:$|[^a-z0-9])/i.test(clean);
   // 4. Haruf / Andar-Bahar keywords e.g. "andar 1(100)", "bahar 2(50)"
-  const hasHaruf = /\b(andar|bahar|a|b|ab|abc|all|cross|r|palti)\b/i.test(clean);
+  const hasHaruf = /(?:^|[^a-z0-9])(andar|bahar|a|b|ab|abc|all|cross|r|palti)(?:$|[^a-z0-9])/i.test(clean);
 
   if (hasBracketAmount || hasIntoAmount) return true;
   if (hasShift && /\d/.test(clean)) return true;
@@ -260,7 +260,7 @@ function detectShiftsInText(text) {
   const matched = new Set();
   for (const k of CATEGORY_KEYS) {
     for (const a of CATEGORIES_MAP[k]) {
-      const rx = new RegExp('\\b' + a.replace(/\./g, '\\.?') + '\\b', 'i');
+      const rx = new RegExp('(?:^|[^a-z0-9])' + a.replace(/\./g, '\\.?') + '(?:$|[^a-z0-9])', 'i');
       if (rx.test(clean)) {
         matched.add(k);
         break;
@@ -354,14 +354,15 @@ function checkMessageTimeValidity(text, calc) {
   // Case B: No shifts open right now, but FUTURE shifts exist (e.g. GB or ND or PD sent in advance)
   if (futureShifts.length > 0) {
     const targetShift = futureShifts[0];
+    const shiftDisplayName = targetShift.toUpperCase();
     return {
       isBet: true,
       valid: false,
       status: 'FUTURE',
       targetShift: targetShift,
       reason: `Held for future shift: ${SHIFT_NAMES[targetShift] || targetShift.toUpperCase()} (${SHIFT_TIME_WINDOWS[targetShift]?.display})`,
-      replyText: null, // Silent hold
-      shouldReply: false,
+      replyText: `Abhi time nahi hua hai ${shiftDisplayName} ka`,
+      shouldReply: true,
       shouldForward: false,
       shouldHold: true,
       timeFormatted,
@@ -977,10 +978,19 @@ const server = http.createServer(async (req, res) => {
           console.log(`\n========================================`);
           console.log(`📩 Message from +${senderPhone}: "${text}"`);
 
-          // Case A: FUTURE Shift -> HOLD Message silently in queue!
+          // Case A: FUTURE Shift -> Send "Abhi time nahi hua hai <SHIFT> ka" & HOLD Message in queue!
           if (timeCheck.shouldHold) {
             console.log(`⏳ [HOLD QUEUE] Message from +${senderPhone} saved for ${timeCheck.targetShift.toUpperCase()}.`);
-            console.log(`ℹ️ Reason: ${timeCheck.reason} -> Will reply 'Ok' and forward when ${timeCheck.targetShift.toUpperCase()} starts.`);
+            console.log(`ℹ️ Reason: ${timeCheck.reason} -> Replying "${timeCheck.replyText}" and holding for shift start.`);
+
+            if (timeCheck.shouldReply && timeCheck.replyText) {
+              try {
+                await sendMessage(sessionId, userKey, timeCheck.replyText);
+                console.log(`🤖 Auto "${timeCheck.replyText}" sent to ${senderPhone}`);
+              } catch (e) {
+                console.error('Error sending hold reply:', e.message);
+              }
+            }
 
             heldMessages.push({
               id: msgId || `${senderPhone}_${Date.now()}`,
