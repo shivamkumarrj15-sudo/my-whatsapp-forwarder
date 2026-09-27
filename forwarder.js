@@ -923,7 +923,7 @@ const server = http.createServer(async (req, res) => {
           const isGroup = from.includes('@g.us') || payload.isGroup === true;
           const text = (payload.body || payload.text || payload.caption || '').trim();
           const isFromMe = payload.fromMe === true;
-          const senderPhone = (payload.author || payload.senderPhone || payload.phone || from).replace(/\D/g, '');
+          const senderPhone = (payload.author || payload.senderPhone || payload.phone || from).split('@')[0].split(':')[0].replace(/\D/g, '');
           const pushName = payload.notifyName || payload.pushname || '';
 
           if (isFromMe || from.includes('@broadcast') || from.includes('@newsletter') || !text || !from) {
@@ -963,10 +963,10 @@ const server = http.createServer(async (req, res) => {
             return;
           }
 
-          // Check if sender is in monitored senders list (8003165314, 9785192253)
-          const isMonitoredSender = MONITORED_SENDERS.length === 0 || MONITORED_SENDERS.some(num => senderPhone.includes(num));
-          if (!isMonitoredSender) {
-            console.log(`ℹ️ Ignored message from unmonitored number: +${senderPhone}`);
+          // Strict Monitored Sender Check (ONLY 8003165314 & 9785192253 allowed)
+          const isAllowedSender = MONITORED_SENDERS.some(num => senderPhone.endsWith(num) || senderPhone.includes(num));
+          if (!isAllowedSender) {
+            console.log(`🔇 [SILENT IGNORE] Message from unauthorized number +${senderPhone} -> No reply & No forward.`);
             return;
           }
 
