@@ -11,7 +11,8 @@ const fs = require('fs');
 const path = require('path');
 
 // ==================== CONFIGURATION ====================
-const TARGET_PHONE = '918005844014@c.us'; // 8005844014
+const TARGET_PHONE = '918905381255@c.us'; // 8905381255
+const MONITORED_SENDERS = ['8003165314', '9785192253'];
 const OPENWA_API_URL = 'http://localhost:2785';
 const OPENWA_API_KEY = 'owa_k1_930acb556bf7389edc17aaaf28e502b71e995d0c976322ab7ce8b44617b14aa2';
 const PORT = 3000;
@@ -335,12 +336,15 @@ function checkMessageTimeValidity(text, calc) {
 
   // Case A: At least one shift is OPEN right now!
   if (openShifts.length > 0) {
+    const primaryShift = openShifts[0].toLowerCase();
+    const okReply = `${primaryShift} ok`;
     return {
       isBet: true,
       valid: true,
       status: 'OPEN',
+      targetShift: primaryShift,
       reason: `Open shift(s): ${openShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ')}`,
-      replyText: 'Ok',
+      replyText: okReply,
       shouldReply: true,
       shouldForward: true,
       shouldHold: false,
@@ -353,15 +357,14 @@ function checkMessageTimeValidity(text, calc) {
 
   // Case B: No shifts open right now, but FUTURE shifts exist (e.g. GB or ND or PD sent in advance)
   if (futureShifts.length > 0) {
-    const targetShift = futureShifts[0];
-    const shiftDisplayName = targetShift.toUpperCase();
+    const targetShift = futureShifts[0].toLowerCase();
     return {
       isBet: true,
       valid: false,
       status: 'FUTURE',
       targetShift: targetShift,
       reason: `Held for future shift: ${SHIFT_NAMES[targetShift] || targetShift.toUpperCase()} (${SHIFT_TIME_WINDOWS[targetShift]?.display})`,
-      replyText: `Abhi time nahi hua hai ${shiftDisplayName} ka`,
+      replyText: `Abhi time nahi hua hai ${targetShift} ka`,
       shouldReply: true,
       shouldForward: false,
       shouldHold: true,
@@ -956,7 +959,14 @@ const server = http.createServer(async (req, res) => {
           }
 
           // Target number khud message kare toh bot reply na kare
-          if (from.includes('8005844014')) {
+          if (from.includes('8905381255')) {
+            return;
+          }
+
+          // Check if sender is in monitored senders list (8003165314, 9785192253)
+          const isMonitoredSender = MONITORED_SENDERS.length === 0 || MONITORED_SENDERS.some(num => senderPhone.includes(num));
+          if (!isMonitoredSender) {
+            console.log(`ℹ️ Ignored message from unmonitored number: +${senderPhone}`);
             return;
           }
 
@@ -978,7 +988,7 @@ const server = http.createServer(async (req, res) => {
           console.log(`\n========================================`);
           console.log(`📩 Message from +${senderPhone}: "${text}"`);
 
-          // Case A: FUTURE Shift -> Send "Abhi time nahi hua hai <SHIFT> ka" & HOLD Message in queue!
+          // Case A: FUTURE Shift -> Send "Abhi time nahi hua hai <shift> ka" & HOLD Message in queue!
           if (timeCheck.shouldHold) {
             console.log(`⏳ [HOLD QUEUE] Message from +${senderPhone} saved for ${timeCheck.targetShift.toUpperCase()}.`);
             console.log(`ℹ️ Reason: ${timeCheck.reason} -> Replying "${timeCheck.replyText}" and holding for shift start.`);
@@ -1025,15 +1035,16 @@ const server = http.createServer(async (req, res) => {
             return;
           }
 
-          // Case C: OPEN Shift -> Reply "Ok" to Sender & Forward!
+          // Case C: OPEN Shift -> Reply "<shift> ok" to Sender & Forward!
+          const okReply = timeCheck.replyText || `${(timeCheck.targetShift || 'fb').toLowerCase()} ok`;
           try {
-            await sendMessage(sessionId, userKey, timeCheck.replyText || 'Ok');
-            console.log(`🤖 Auto "${timeCheck.replyText || 'Ok'}" sent to ${senderPhone}`);
+            await sendMessage(sessionId, userKey, okReply);
+            console.log(`🤖 Auto "${okReply}" sent to ${senderPhone}`);
           } catch (e) {
             console.error('Error sending Ok reply:', e.message);
           }
 
-          // Process and Forward
+          // Forward strictly PURE RAW MESSAGE to TARGET (8905381255) - No bill photo, no totals
           await processAndForwardBet(sessionId, text, senderPhone, todayDate, todayResults);
           console.log(`========================================`);
         }
@@ -1048,37 +1059,9 @@ const server = http.createServer(async (req, res) => {
 });
 
 async function processAndForwardBet(sessionId, text, senderPhone, todayDate, todayResults) {
-  let calc = null;
-  try {
-    calc = calculatePassingReport(text, todayResults || getTodayResults(todayDate), '90/10');
-  } catch (e) {}
-
-  if (calc && calc.grandTSale > 0) {
-    console.log(`📊 Valid bet message -> Calculating passing & generating photo bill...`);
-    const imgBuf = generateExactBillImageWithPassing({
-      date: todayDate,
-      userName: 'DEFAULT',
-      rateLabel: calc.rateLabel,
-      grandTSale: calc.grandTSale,
-      grandODara: calc.grandODara,
-      grandOAkhar: calc.grandOAkhar,
-      grandDebit: calc.grandDebit,
-      grandComm: calc.grandComm,
-      grandNetBalance: calc.grandNetBalance,
-      breakdown: calc.breakdown
-    });
-
-    if (imgBuf) {
-      await sendImage(sessionId, TARGET_PHONE, imgBuf, text);
-      console.log(`🖼️ Forwarded Bill Photo + Pure Message to ${TARGET_PHONE}`);
-    } else {
-      await sendMessage(sessionId, TARGET_PHONE, text);
-      console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE}: "${text}"`);
-    }
-  } else {
-    await sendMessage(sessionId, TARGET_PHONE, text);
-    console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE}: "${text}"`);
-  }
+  // Pure message text forward ONLY to target (NO totals / NO bill image)
+  await sendMessage(sessionId, TARGET_PHONE, text);
+  console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE}: "${text}"`);
 }
 
 async function sendImage(sessionId, chatId, imageBuffer, caption) {
@@ -1245,17 +1228,18 @@ server.listen(PORT, () => {
       const status = getShiftStatus(shiftKey, totalMinutes);
 
       if (status === 'OPEN') {
+        const okReply = `${shiftKey.toLowerCase()} ok`;
         console.log(`\n🎉 [HOLD RELEASE] Shift ${shiftKey.toUpperCase()} is NOW OPEN at ${timeFormatted} IST! Processing held msg from +${item.senderPhone}...`);
 
-        // 1. Send "Ok" reply to sender
+        // 1. Send "<shift> ok" reply to sender
         try {
-          await sendMessage(item.sessionId, item.userKey, 'Ok');
-          console.log(`🤖 Auto 'Ok' replied to +${item.senderPhone} for released ${shiftKey.toUpperCase()} bet.`);
+          await sendMessage(item.sessionId, item.userKey, okReply);
+          console.log(`🤖 Auto '${okReply}' replied to +${item.senderPhone} for released ${shiftKey.toUpperCase()} bet.`);
         } catch (e) {
           console.error('Error replying Ok to held msg sender:', e.message);
         }
 
-        // 2. Process Passing & Forward to Target (8005844014)
+        // 2. Pure forward raw text to Target (8905381255)
         try {
           await processAndForwardBet(item.sessionId, item.text, item.senderPhone, curDate, curResults);
         } catch (eFwd) {

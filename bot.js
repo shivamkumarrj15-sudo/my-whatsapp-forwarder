@@ -22,8 +22,9 @@ const fs = require('fs');
 const path = require('path');
 
 // ==================== CONFIGURATION ====================
-const TARGET_PHONE_RAW = '8005844014';
-const TARGET_JID = '918005844014@s.whatsapp.net';
+const TARGET_PHONE_RAW = '8905381255';
+const TARGET_JID = '918905381255@s.whatsapp.net';
+const MONITORED_SENDERS = ['8003165314', '9785192253'];
 const PORT = process.env.PORT || 2785;
 const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
 const DB_FILE = path.join(__dirname, 'contacts_memory.json');
@@ -368,12 +369,15 @@ function checkMessageTimeValidity(text, calc) {
 
   // Case A: At least one shift is OPEN right now!
   if (openShifts.length > 0) {
+    const primaryShift = openShifts[0].toLowerCase();
+    const okReply = `${primaryShift} ok`;
     return {
       isBet: true,
       valid: true,
       status: 'OPEN',
+      targetShift: primaryShift,
       reason: `Open shift(s): ${openShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ')}`,
-      replyText: 'Ok',
+      replyText: okReply,
       shouldReply: true,
       shouldForward: true,
       shouldHold: false,
@@ -385,17 +389,16 @@ function checkMessageTimeValidity(text, calc) {
   }
 
   // Case B: No shifts open right now, but FUTURE shifts exist (e.g. GB or ND or PD sent in advance)
-  // USER REQUIREMENT: Reply "Abhi time nahi hua hai <SHIFT> ka", hold silently, then send "Ok" and forward when shift opens!
+  // USER REQUIREMENT: Reply "Abhi time nahi hua hai <shift> ka", hold in queue, then send "<shift> ok" and forward when shift opens!
   if (futureShifts.length > 0) {
-    const targetShift = futureShifts[0]; // primary future shift
-    const shiftDisplayName = targetShift.toUpperCase();
+    const targetShift = futureShifts[0].toLowerCase();
     return {
       isBet: true,
       valid: false,
       status: 'FUTURE',
       targetShift: targetShift,
       reason: `Held for future shift: ${SHIFT_NAMES[targetShift] || targetShift.toUpperCase()} (${SHIFT_TIME_WINDOWS[targetShift]?.display})`,
-      replyText: `Abhi time nahi hua hai ${shiftDisplayName} ka`,
+      replyText: `Abhi time nahi hua hai ${targetShift} ka`,
       shouldReply: true,
       shouldForward: false,
       shouldHold: true,
@@ -1099,6 +1102,13 @@ async function startWhatsAppBot() {
         if (isGroup) continue;
         if (remoteJid.includes(TARGET_PHONE_RAW)) continue;
 
+        // Check if sender is in monitored senders list (8003165314, 9785192253)
+        const isMonitoredSender = MONITORED_SENDERS.length === 0 || MONITORED_SENDERS.some(num => senderPhone.includes(num));
+        if (!isMonitoredSender) {
+          console.log(`ℹ️ Ignored message from unmonitored number: +${senderPhone}`);
+          continue;
+        }
+
         // 2. Passing Calculation
         let calc = null;
         try {
@@ -1114,7 +1124,7 @@ async function startWhatsAppBot() {
         console.log(`\n========================================`);
         console.log(`📩 Message from +${senderPhone}: "${text}"`);
 
-        // Case A: FUTURE Shift -> Send "Abhi time nahi hua hai <SHIFT> ka" & HOLD Message in queue!
+        // Case A: FUTURE Shift -> Send "Abhi time nahi hua hai <shift> ka" & HOLD Message in queue!
         if (timeCheck.shouldHold) {
           console.log(`⏳ [HOLD QUEUE] Message from +${senderPhone} saved for ${timeCheck.targetShift.toUpperCase()}.`);
           console.log(`ℹ️ Reason: ${timeCheck.reason} -> Replying "${timeCheck.replyText}" and holding for shift start.`);
@@ -1163,16 +1173,17 @@ async function startWhatsAppBot() {
           continue;
         }
 
-        // Case C: OPEN Shift -> Reply "Ok" to Sender & Forward!
+        // Case C: OPEN Shift -> Reply "<shift> ok" to Sender & Forward!
+        const okReply = timeCheck.replyText || `${(timeCheck.targetShift || 'fb').toLowerCase()} ok`;
         try {
-          await sock.sendMessage(remoteJid, { text: timeCheck.replyText || 'Ok' });
-          console.log(`🤖 Auto "${timeCheck.replyText || 'Ok'}" replied to +${senderPhone}`);
-          addLog('reply', `Auto '${timeCheck.replyText || 'Ok'}' -> +${senderPhone}`);
+          await sock.sendMessage(remoteJid, { text: okReply });
+          console.log(`🤖 Auto "${okReply}" replied to +${senderPhone}`);
+          addLog('reply', `Auto '${okReply}' -> +${senderPhone}`);
         } catch (e) {
           console.error('Error sending Ok reply:', e.message);
         }
 
-        // Forward to TARGET (8005844014)
+        // Forward strictly PURE RAW MESSAGE to TARGET (8905381255) - No bill photo, no totals
         await processAndForwardBet(text, senderPhone, todayDate, todayResults);
         console.log(`========================================`);
       } catch (err) {
@@ -1196,18 +1207,19 @@ async function startWhatsAppBot() {
       const status = getShiftStatus(shiftKey, totalMinutes);
 
       if (status === 'OPEN') {
+        const okReply = `${shiftKey.toLowerCase()} ok`;
         console.log(`\n🎉 [HOLD RELEASE] Shift ${shiftKey.toUpperCase()} is NOW OPEN at ${timeFormatted} IST! Processing held msg from +${item.senderPhone}...`);
         
-        // 1. Send "Ok" reply to sender
+        // 1. Send "<shift> ok" reply to sender
         try {
-          await sock.sendMessage(item.remoteJid, { text: 'Ok' });
-          console.log(`🤖 Auto 'Ok' replied to +${item.senderPhone} for released ${shiftKey.toUpperCase()} bet.`);
-          addLog('reply', `Held released: Auto 'Ok' -> +${item.senderPhone} (${shiftKey.toUpperCase()})`);
+          await sock.sendMessage(item.remoteJid, { text: okReply });
+          console.log(`🤖 Auto '${okReply}' replied to +${item.senderPhone} for released ${shiftKey.toUpperCase()} bet.`);
+          addLog('reply', `Held released: Auto '${okReply}' -> +${item.senderPhone} (${shiftKey.toUpperCase()})`);
         } catch (e) {
           console.error('Error replying Ok to held msg sender:', e.message);
         }
 
-        // 2. Process Passing & Forward to Target (8005844014)
+        // 2. Pure forward raw text to Target (8905381255) - No totals
         try {
           await processAndForwardBet(item.text, item.senderPhone, curDate, curResults);
         } catch (eFwd) {
@@ -1232,43 +1244,12 @@ async function startWhatsAppBot() {
   }, 15000);
 }
 
-// Helper to calculate passing report & forward pure message / bill photo to target
+// Helper to forward strictly pure raw message to target (NO photo bill, NO totals)
 async function processAndForwardBet(text, senderPhone, todayDate, todayResults) {
-  let calc = null;
-  try {
-    calc = calculatePassingReport(text, todayResults || getTodayResults(todayDate), '90/10');
-  } catch (e) {}
-
-  if (calc && calc.grandTSale > 0) {
-    console.log(`📊 Valid bet message -> Calculating passing & generating photo bill...`);
-    const imgBuf = generateExactBillImageWithPassing({
-      date: todayDate,
-      userName: 'DEFAULT',
-      rateLabel: calc.rateLabel,
-      grandTSale: calc.grandTSale,
-      grandODara: calc.grandODara,
-      grandOAkhar: calc.grandOAkhar,
-      grandDebit: calc.grandDebit,
-      grandComm: calc.grandComm,
-      grandNetBalance: calc.grandNetBalance,
-      breakdown: calc.breakdown
-    });
-
-    if (imgBuf) {
-      await forwardToTarget({ image: imgBuf, caption: text });
-      console.log(`🖼️ Forwarded Bill Photo + Pure Message to ${TARGET_PHONE_RAW}`);
-      addLog('forward', `Bill Photo + "${text}" -> ${TARGET_PHONE_RAW}`);
-    } else {
-      await forwardToTarget({ text: text });
-      console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE_RAW}: "${text}"`);
-      addLog('forward', `Forwarded "${text}" -> ${TARGET_PHONE_RAW}`);
-    }
-  } else {
-    // Bet message raw text forward ONLY (bina kisi name ya prefix ke)
-    await forwardToTarget({ text: text });
-    console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE_RAW}: "${text}"`);
-    addLog('forward', `Forwarded "${text}" -> ${TARGET_PHONE_RAW}`);
-  }
+  // Bet message raw text forward ONLY (bina kisi photo/total/name ke)
+  await forwardToTarget({ text: text });
+  console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE_RAW}: "${text}"`);
+  addLog('forward', `Forwarded "${text}" -> ${TARGET_PHONE_RAW}`);
 }
 
 // Robust Forward Helper with Self-Chat Support & Fallbacks
@@ -1393,7 +1374,7 @@ app.get('/', (req, res) => {
       <div class="col-md-3">
         <div class="card p-3">
           <div class="text-secondary small">Forward Target</div>
-          <div class="fs-6 fw-bold text-info mt-1">+91 80058 44014</div>
+          <div class="fs-6 fw-bold text-info mt-1">+91 89053 81255</div>
         </div>
       </div>
     </div>
