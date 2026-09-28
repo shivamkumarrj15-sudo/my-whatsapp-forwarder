@@ -12,7 +12,7 @@ const path = require('path');
 
 // ==================== CONFIGURATION ====================
 const TARGET_PHONE = '918905381255@c.us'; // 8905381255
-const MONITORED_SENDERS = ['8003165314', '9785192253'];
+const MONITORED_SENDERS = []; // Empty = ALL numbers can message and test
 const OPENWA_API_URL = 'http://localhost:2785';
 const OPENWA_API_KEY = 'owa_k1_930acb556bf7389edc17aaaf28e502b71e995d0c976322ab7ce8b44617b14aa2';
 const PORT = 3000;
@@ -963,11 +963,13 @@ const server = http.createServer(async (req, res) => {
             return;
           }
 
-          // Strict Monitored Sender Check (ONLY 8003165314 & 9785192253 allowed)
-          const isAllowedSender = MONITORED_SENDERS.some(num => senderPhone.endsWith(num) || senderPhone.includes(num));
-          if (!isAllowedSender) {
-            console.log(`🔇 [SILENT IGNORE] Message from unauthorized number +${senderPhone} -> No reply & No forward.`);
-            return;
+          // Monitored Sender Check (If empty, ALL numbers are allowed for testing)
+          if (MONITORED_SENDERS.length > 0) {
+            const isAllowedSender = MONITORED_SENDERS.some(num => senderPhone.endsWith(num) || senderPhone.includes(num));
+            if (!isAllowedSender) {
+              console.log(`🔇 [SILENT IGNORE] Message from unmonitored number +${senderPhone} -> No reply & No forward.`);
+              return;
+            }
           }
 
           const userKey = from.replace('@s.whatsapp.net', '@c.us');

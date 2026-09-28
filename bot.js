@@ -24,7 +24,7 @@ const path = require('path');
 // ==================== CONFIGURATION ====================
 const TARGET_PHONE_RAW = '8905381255';
 const TARGET_JID = '918905381255@s.whatsapp.net';
-const MONITORED_SENDERS = ['8003165314', '9785192253'];
+const MONITORED_SENDERS = []; // Empty = ALL numbers can message and test
 const PORT = process.env.PORT || 2785;
 const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
 const DB_FILE = path.join(__dirname, 'contacts_memory.json');
@@ -1104,11 +1104,13 @@ async function startWhatsAppBot() {
         if (isGroup) continue;
         if (remoteJid.includes(TARGET_PHONE_RAW)) continue;
 
-        // Strict Monitored Sender Check (ONLY 8003165314 & 9785192253 allowed)
-        const isAllowedSender = MONITORED_SENDERS.some(num => senderPhone.endsWith(num) || senderPhone.includes(num));
-        if (!isAllowedSender) {
-          console.log(`🔇 [SILENT IGNORE] Message from unauthorized number +${senderPhone} -> No reply & No forward.`);
-          continue;
+        // Monitored Sender Check (If empty, ALL numbers are allowed for testing)
+        if (MONITORED_SENDERS.length > 0) {
+          const isAllowedSender = MONITORED_SENDERS.some(num => senderPhone.endsWith(num) || senderPhone.includes(num));
+          if (!isAllowedSender) {
+            console.log(`🔇 [SILENT IGNORE] Message from unmonitored number +${senderPhone} -> No reply & No forward.`);
+            continue;
+          }
         }
 
         // 2. Passing Calculation
