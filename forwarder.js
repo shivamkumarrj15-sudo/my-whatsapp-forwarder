@@ -12,7 +12,7 @@ const path = require('path');
 
 // ==================== CONFIGURATION ====================
 const TARGET_PHONE = '918905381255@c.us'; // 8905381255
-const MONITORED_SENDERS = []; // Empty = ALL numbers can message and test
+const MONITORED_SENDERS = ['8003165314', '9785192253', '8005844014'];
 const OPENWA_API_URL = 'http://localhost:2785';
 const OPENWA_API_KEY = 'owa_k1_930acb556bf7389edc17aaaf28e502b71e995d0c976322ab7ce8b44617b14aa2';
 const PORT = 3000;

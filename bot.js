@@ -24,7 +24,7 @@ const path = require('path');
 // ==================== CONFIGURATION ====================
 const TARGET_PHONE_RAW = '8905381255';
 const TARGET_JID = '918905381255@s.whatsapp.net';
-const MONITORED_SENDERS = []; // Empty = ALL numbers can message and test
+const MONITORED_SENDERS = ['8003165314', '9785192253', '8005844014'];
 const PORT = process.env.PORT || 2785;
 const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
 const DB_FILE = path.join(__dirname, 'contacts_memory.json');
