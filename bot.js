@@ -3,7 +3,7 @@
  * - Real-time Stock Market Quotes & Data (NSE, BSE, US Markets, Crypto, Commodities)
  * - Automated Technical Analysis: RSI (14), 50-day & 200-day Moving Averages
  * - Support & Resistance Levels, Trade Plan (Entry, Targets, Stop-loss)
- * - AI Powered Financial Analysis & Conversational Market Intelligence
+ * - AI Powered Financial Analysis & Conversational Market Intelligence (Gemini / OpenAI / Groq / Built-in)
  * - Zero betting/lottery code, pure 100% Stock Market & Investment AI
  */
 
@@ -59,99 +59,126 @@ const botState = {
 function addLog(type, text) {
   const time = new Date().toLocaleTimeString('en-IN', {
     timeZone: 'Asia/Kolkata',
+    hour12: true,
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
   });
-  botState.recentLogs.unshift({ time, type, text });
+  botState.recentLogs.unshift({ type, text, time });
   if (botState.recentLogs.length > 50) botState.recentLogs.pop();
 }
 
-// Message Deduplication
-const processedMessages = new Set();
-function isDuplicate(msgId, text, from) {
-  const key = msgId || `${from}_${text}`;
-  if (processedMessages.has(key)) return true;
-  processedMessages.add(key);
-  setTimeout(() => processedMessages.delete(key), 12000);
+// Deduplication
+const processedMessageIds = new Map();
+function isDuplicate(msgId, text, sender) {
+  const key = `${msgId}_${sender}_${text}`;
+  const now = Date.now();
+  if (processedMessageIds.has(key)) {
+    if (now - processedMessageIds.get(key) < 15000) return true;
+  }
+  processedMessageIds.set(key, now);
+  if (processedMessageIds.size > 200) {
+    const cutoff = now - 60000;
+    for (const [k, ts] of processedMessageIds.entries()) {
+      if (ts < cutoff) processedMessageIds.delete(k);
+    }
+  }
   return false;
 }
 
-// ==================== STOCK TICKER DICTIONARY & ALIASES ====================
+// ==================== POPULAR STOCK ALIASES ====================
 const POPULAR_STOCKS = {
   'RELIANCE': 'RELIANCE.NS',
-  'TATA MOTORS': 'TMPV.NS',
-  'TATAMOTORS': 'TMPV.NS',
-  'TMCV': 'TMCV.NS',
-  'TMPV': 'TMPV.NS',
+  'TATA MOTORS': 'TATAMOTORS.NS',
+  'TATAMOTORS': 'TATAMOTORS.NS',
+  'TATA POWER': 'TATAPOWER.NS',
+  'TATAPOWER': 'TATAPOWER.NS',
   'TATA STEEL': 'TATASTEEL.NS',
   'TATASTEEL': 'TATASTEEL.NS',
   'TCS': 'TCS.NS',
   'INFY': 'INFY.NS',
   'INFOSYS': 'INFY.NS',
-  'HDFC': 'HDFCBANK.NS',
+  'HDFC BANK': 'HDFCBANK.NS',
   'HDFCBANK': 'HDFCBANK.NS',
-  'ICICI': 'ICICIBANK.NS',
+  'ICICI BANK': 'ICICIBANK.NS',
   'ICICIBANK': 'ICICIBANK.NS',
-  'SBIN': 'SBIN.NS',
   'SBI': 'SBIN.NS',
+  'SBIN': 'SBIN.NS',
+  'STATE BANK': 'SBIN.NS',
   'SUZLON': 'SUZLON.NS',
+  'SUZLON ENERGY': 'SUZLON.NS',
   'ZOMATO': 'ZOMATO.NS',
+  'PAYTM': 'PAYTM.NS',
   'ITC': 'ITC.NS',
-  'WIPRO': 'WIPRO.NS',
+  'ADANI ENTERPRISES': 'ADANIENT.NS',
   'ADANIENT': 'ADANIENT.NS',
   'ADANI PORTS': 'ADANIPORTS.NS',
   'ADANIPORTS': 'ADANIPORTS.NS',
+  'ADANI POWER': 'ADANIPOWER.NS',
   'ADANIPOWER': 'ADANIPOWER.NS',
+  'ADANI GREEN': 'ADANIGREEN.NS',
+  'ADANIGREEN': 'ADANIGREEN.NS',
+  'WIPRO': 'WIPRO.NS',
+  'HCLTECH': 'HCLTECH.NS',
+  'HCL TECH': 'HCLTECH.NS',
   'BAJFINANCE': 'BAJFINANCE.NS',
   'BAJAJ FINANCE': 'BAJFINANCE.NS',
+  'BAJAJ FINSERV': 'BAJAJFINSV.NS',
   'BAJAJ AUTO': 'BAJAJ-AUTO.NS',
+  'MARUTI': 'MARUTI.NS',
+  'MARUTI SUZUKI': 'MARUTI.NS',
+  'M&M': 'M&M.NS',
+  'MAHINDRA': 'M&M.NS',
   'BHARTI AIRTEL': 'BHARTIARTL.NS',
   'AIRTEL': 'BHARTIARTL.NS',
+  'BHARTIARTL': 'BHARTIARTL.NS',
   'L&T': 'LT.NS',
   'LT': 'LT.NS',
   'LARSEN': 'LT.NS',
-  'MARUTI': 'MARUTI.NS',
-  'M&M': 'M&M.NS',
-  'MAHINDRA': 'M&M.NS',
-  'HINDUNILVR': 'HINDUNILVR.NS',
-  'HUL': 'HINDUNILVR.NS',
-  'KOTAKBANK': 'KOTAKBANK.NS',
-  'KOTAK': 'KOTAKBANK.NS',
-  'AXISBANK': 'AXISBANK.NS',
-  'AXIS': 'AXISBANK.NS',
+  'ASIAN PAINTS': 'ASIANPAINT.NS',
+  'ASIANPAINT': 'ASIANPAINT.NS',
   'TITAN': 'TITAN.NS',
-  'ASIANPAINTS': 'ASIANPAINT.NS',
-  'ASIAN PAINT': 'ASIANPAINT.NS',
+  'KOTAK BANK': 'KOTAKBANK.NS',
+  'KOTAKBANK': 'KOTAKBANK.NS',
+  'AXIS BANK': 'AXISBANK.NS',
+  'AXISBANK': 'AXISBANK.NS',
+  'SUN PHARMA': 'SUNPHARMA.NS',
+  'SUNPHARMA': 'SUNPHARMA.NS',
+  'CIPLA': 'CIPLA.NS',
+  'DR REDDY': 'DRREDDY.NS',
+  'NTPC': 'NTPC.NS',
+  'ONGC': 'ONGC.NS',
+  'COAL INDIA': 'COALINDIA.NS',
+  'COALINDIA': 'COALINDIA.NS',
+  'POWERGRID': 'POWERGRID.NS',
+  'IOC': 'IOC.NS',
+  'BPCL': 'BPCL.NS',
   'HAL': 'HAL.NS',
   'BEL': 'BEL.NS',
   'BHEL': 'BHEL.NS',
   'IREDA': 'IREDA.NS',
   'IRFC': 'IRFC.NS',
   'RVNL': 'RVNL.NS',
-  'NHPC': 'NHPC.NS',
-  'TRENT': 'TRENT.NS',
+  'RAILTEL': 'RAILTEL.NS',
+  'IRCTC': 'IRCTC.NS',
   'VEDANTA': 'VEDL.NS',
   'VEDL': 'VEDL.NS',
-  'COAL INDIA': 'COALINDIA.NS',
-  'COALINDIA': 'COALINDIA.NS',
-  'ONGC': 'ONGC.NS',
-  'NTPC': 'NTPC.NS',
-  'POWERGRID': 'POWERGRID.NS',
-  'IOC': 'IOC.NS',
-  'BPCL': 'BPCL.NS',
+  'JIO FINANCIAL': 'JIOFIN.NS',
+  'JIOFIN': 'JIOFIN.NS',
   'YES BANK': 'YESBANK.NS',
   'YESBANK': 'YESBANK.NS',
   'IDEA': 'IDEA.NS',
   'VODAFONE IDEA': 'IDEA.NS',
-  'PAYTM': 'PAYTM.NS',
-  'NYKAA': 'NYKAA.NS',
-  'POLICYBAZAAR': 'POLICYBZR.NS',
+  'SWIGGY': 'SWIGGY.NS',
+  'OLA ELECTRIC': 'OLAELEC.NS',
+  'OLAELEC': 'OLAELEC.NS',
   'NIFTY': '^NSEI',
   'NIFTY50': '^NSEI',
   'NIFTY 50': '^NSEI',
   'BANKNIFTY': '^NSEBANK',
   'BANK NIFTY': '^NSEBANK',
+  'FINNIFTY': 'NIFTY_FIN_SERVICE.NS',
+  'MIDCPNIFTY': 'NIFTY_MIDCAP_100.NS',
   'SENSEX': '^BSESN',
   'GOLD': 'GC=F',
   'SILVER': 'SI=F',
@@ -167,7 +194,7 @@ const POPULAR_STOCKS = {
   'NVIDIA': 'NVDA',
   'GOOGLE': 'GOOGL',
   'AMAZON': 'AMZN',
-  'META': 'META'
+  'META': 'META',
 };
 
 // ==================== STOCK DATA & TECHNICAL ENGINE ====================
@@ -330,6 +357,12 @@ async function fetchStockAnalysis(query) {
       cmp,
       change,
       changePct,
+      sma50,
+      sma200,
+      rsi,
+      trend,
+      s1,
+      r1,
       report,
       rawMeta: meta,
     };
@@ -347,7 +380,10 @@ function extractStockQuery(text) {
   // Remove common filler words
   const words = clean.split(/\s+/);
   if (words.length === 1 && clean.length >= 2 && clean.length <= 15) {
-    return clean;
+    const ignoreSingle = ['hi', 'hello', 'hey', 'help', 'menu', 'kya', 'kaun', 'aaj', 'kal', 'ok', 'good', 'bye'];
+    if (!ignoreSingle.includes(clean.toLowerCase())) {
+      return clean;
+    }
   }
 
   // Check if query mentions known stock aliases
@@ -362,14 +398,14 @@ function extractStockQuery(text) {
   // Check phrases like "analysis of RELIANCE", "TCS share price", "Tata motors buy karein"
   const patterns = [
     /(?:share|stock|price|target|analysis|view|report|buy|sell|cmp|future|chart|news)\s+(?:of|for|on|in)?\s*([A-Za-z0-9\.\-\&]+)/i,
-    /([A-Za-z0-9\.\-\&]+)\s+(?:ka|ki|ke|share|stock|price|target|analysis|report|kaisa|buy|sell|future)/i,
+    /([A-Za-z0-9\.\-\&]+)\s+(?:ka|ki|ke|share|stock|price|target|analysis|report|kaisa|buy|sell|future|cmp)/i,
   ];
 
   for (const p of patterns) {
     const m = clean.match(p);
     if (m && m[1] && m[1].length >= 2 && m[1].length <= 15) {
       const candidate = m[1].trim();
-      const ignoreWords = ['kya', 'kaun', 'aaj', 'kal', 'best', 'good', 'top', 'penny', 'option', 'call', 'put', 'live', 'hai'];
+      const ignoreWords = ['kya', 'kaun', 'aaj', 'kal', 'best', 'good', 'top', 'penny', 'option', 'call', 'put', 'live', 'hai', 'bhai', 'sir'];
       if (!ignoreWords.includes(candidate.toLowerCase())) {
         return candidate;
       }
@@ -379,37 +415,81 @@ function extractStockQuery(text) {
   return null;
 }
 
-// AI Financial Conversational Brain (Gemini / OpenAI / Built-in Smart Fallback)
-async function generateAIAnswer(prompt) {
-  // 1. If Gemini API key is configured
+// AI Financial Conversational Brain (Gemini / OpenAI / Groq / Built-in Smart Fallback)
+async function generateAIAnswer(prompt, stockData = null) {
+  let contextPrompt = `User Question / Topic: "${prompt}"`;
+  if (stockData && stockData.rawMeta) {
+    const meta = stockData.rawMeta;
+    contextPrompt += `\n\nLive Real-Time Market Data for ${stockData.companyName} (${stockData.symbol}):
+- Current Market Price: ${meta.currency || 'INR'} ${stockData.cmp} (Today: ${stockData.change >= 0 ? '+' : ''}${stockData.changePct.toFixed(2)}%)
+- Day High / Low: ${meta.regularMarketDayHigh || 'N/A'} / ${meta.regularMarketDayLow || 'N/A'}
+- 52-Week High / Low: ${meta.fiftyTwoWeekHigh || 'N/A'} / ${meta.fiftyTwoWeekLow || 'N/A'}
+- 50-Day SMA: ${stockData.sma50?.toFixed(2) || 'N/A'} | 200-Day SMA: ${stockData.sma200?.toFixed(2) || 'N/A'}
+- RSI (14): ${stockData.rsi?.toFixed(1) || 'N/A'}
+- Trend Status: ${stockData.trend || 'N/A'}
+- Support (S1): ${stockData.s1?.toFixed(2) || 'N/A'} | Resistance (R1): ${stockData.r1?.toFixed(2) || 'N/A'}
+
+Please formulate an expert, well-structured financial research response in Hindi/Hinglish (or English if user asked in English). Use bolding, bullet points, emojis, and WhatsApp friendly formatting. Provide actionable insights, technical & fundamental view, entry/exit zones, and risk factors.`;
+  } else {
+    contextPrompt += `\n\nPlease answer as an expert Indian & Global Stock Market Research AI Assistant. Format the reply cleanly for WhatsApp with emojis, bullet points, and practical financial guidance in Hindi/Hinglish (or English).`;
+  }
+
+  // 1. Google Gemini API (Free, fast & powerful)
   if (appConfig.geminiApiKey) {
+    const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+    for (const model of geminiModels) {
+      try {
+        const gUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${appConfig.geminiApiKey}`;
+        const res = await fetch(gUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              {
+                role: 'user',
+                parts: [{ text: contextPrompt }],
+              },
+            ],
+          }),
+        });
+        const data = await res.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text && text.trim().length > 0) return text.trim();
+      } catch (e) {
+        console.error(`Gemini (${model}) error:`, e.message);
+      }
+    }
+  }
+
+  // 2. Groq API (Free & Fast Llama-3.3)
+  if (appConfig.groqApiKey) {
     try {
-      const gUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${appConfig.geminiApiKey}`;
-      const res = await fetch(gUrl, {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${appConfig.groqApiKey}`,
+        },
         body: JSON.stringify({
-          contents: [
+          model: 'llama-3.3-70b-versatile',
+          messages: [
             {
-              role: 'user',
-              parts: [
-                {
-                  text: `You are an expert Indian Stock Market and Global Financial Research AI Assistant on WhatsApp. Answer the user's question clearly, professionally, and concisely in Hindi/Hinglish (or English if asked in English). Use bullet points, emojis, bold text, and crisp formatting suitable for WhatsApp. Never give reckless financial advice, always provide balanced analysis with risks. Question: ${prompt}`,
-                },
-              ],
+              role: 'system',
+              content: 'You are an expert Stock Market & Financial Research AI Assistant on WhatsApp. Answer concisely and professionally in Hinglish/English with WhatsApp bullet formatting.',
             },
+            { role: 'user', content: contextPrompt },
           ],
         }),
       });
       const data = await res.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (text) return text.trim();
+      const text = data?.choices?.[0]?.message?.content;
+      if (text && text.trim().length > 0) return text.trim();
     } catch (e) {
-      console.error('Gemini API error:', e.message);
+      console.error('Groq API error:', e.message);
     }
   }
 
-  // 2. If OpenAI API key is configured
+  // 3. OpenAI API
   if (appConfig.openaiApiKey) {
     try {
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -425,50 +505,50 @@ async function generateAIAnswer(prompt) {
               role: 'system',
               content: 'You are an expert Stock Market AI Assistant on WhatsApp. Provide concise, high-value financial research in Hinglish/English with WhatsApp bullet formatting.',
             },
-            { role: 'user', content: prompt },
+            { role: 'user', content: contextPrompt },
           ],
         }),
       });
       const data = await res.json();
       const text = data?.choices?.[0]?.message?.content;
-      if (text) return text.trim();
+      if (text && text.trim().length > 0) return text.trim();
     } catch (e) {
       console.error('OpenAI API error:', e.message);
     }
   }
 
-  // 3. Built-in Smart Financial Guidance Fallback
+  // 4. Built-in Smart Financial Guidance Fallback
+  if (stockData && stockData.report) {
+    return `${stockData.report}\n\n🤖 *AI Research Note:* Technical signal: *${stockData.trend || 'Consolidation'}*. Follow proper risk management and stop-loss.`;
+  }
+
   return `🤖 *AI FINANCIAL RESEARCH ASSISTANT*
 ━━━━━━━━━━━━━━━━━━━━━
 Aapke sawal: *"${prompt}"*
 
-💡 *Market & Investment Guidelines:*
-1. **Stock Research:** Kisi bhi specific stock ka live data & technical report dekhne ke liye seedha uska naam bhejein (jaise: \`RELIANCE\`, \`TATAMOTORS\`, \`SUZLON\`, \`TCS\`, \`NIFTY\`).
-2. **Diversification:** Apne portfolio ko 10-15 alag-alag strong sectors me divide karein.
-3. **Risk Management:** Short-term trades me hamesha 3% se 5% ka strict Stop-Loss follow karein.
-4. **Long Term Compounding:** Quality large-cap & fundamentally sound mid-cap stocks me SIP/Dips par accumulate karna long-term wealth banata hai.
+💡 *Market Research & Key Guidelines:*
+1. **Stock Analysis:** Kisi bhi specific share ka live data & technical report dekhne ke liye uska naam type karein (jaise: \`RELIANCE\`, \`TATAMOTORS\`, \`SUZLON\`, \`TCS\`, \`NIFTY\`).
+2. **Moving Averages:** 50 SMA & 200 SMA ke upar bane rahne wale shares strong uptrend me mane jate hain.
+3. **Risk Management:** Swing trading me 3% se 5% ka strict Stop-Loss zaroor follow karein.
+4. **Diversification:** Apne portfolio ko leading blue-chip aur growth stocks me diversify karein.
 
-📌 *Try asking:*
-• \`TATA MOTORS analysis\`
-• \`SUZLON price target\`
-• \`NIFTY 50\`
-• \`RELIANCE\``;
+✨ *Tip:* Deep AI Answers aur detailed Q&A ke liye Dashboard par apna Free Gemini API Key link karein!`;
 }
 
 // Help Menu Message
 function getHelpMenu() {
   return `👋 *Namaste! Main hoon aapka AI Stock Research Assistant* 📈
 
-Aap mujhse kisi bhi Stock ki **Live Price, Technical Indicators (RSI, 50/200 SMA), Support & Resistance** aur **Target Plan** pooch sakte hain!
+Aap mujhse kisi bhi Stock ki **Live Price, Technical Indicators (RSI, 50/200 SMA), Support & Resistance** aur **AI Trade Plan** pooch sakte hain!
 
 ━━━━━━━━━━━━━━━━━━━━━
 🔍 *Kaise Search Karein:*
-• Type karein stock ka naam: \`RELIANCE\`, \`TATAMOTORS\`, \`SUZLON\`
-• Ya sawal poochein: \`Tata Motors target\`, \`HDFC Bank analysis\`
-• Major Indices: \`NIFTY\`, \`BANKNIFTY\`, \`SENSEX\`, \`GOLD\`, \`BTC\`
-• Financial Questions: \`PE ratio kya hota hai?\`, \`Best dividend strategy\`
+• Stock Name / Ticker: \`RELIANCE\`, \`TATAMOTORS\`, \`SUZLON\`, \`TCS\`
+• Sawal / Analysis: \`Tata Motors target\`, \`Reliance me invest karein ya nahi?\`
+• Indices & Commodities: \`NIFTY 50\`, \`BANKNIFTY\`, \`GOLD\`, \`BITCOIN\`
+• Q&A & Research: \`PE ratio kya hota hai?\`, \`Swing trading strategy in Hindi\`
 
-💡 *Abhi kisi bhi stock ka naam type karke bhejiye!*`;
+💡 *Abhi kisi bhi stock ka naam ya sawal bhej kar check karein!*`;
 }
 
 // ==================== BAILEYS WHATSAPP BOT ====================
@@ -543,8 +623,6 @@ async function startWhatsAppBot() {
         if (!msg.message || msg.key.fromMe) continue;
 
         const remoteJid = msg.key.remoteJid || '';
-        const isGroup = remoteJid.endsWith('@g.us');
-
         if (
           remoteJid.endsWith('@broadcast') ||
           remoteJid.endsWith('@newsletter') ||
@@ -571,7 +649,7 @@ async function startWhatsAppBot() {
 
         botState.totalQueriesProcessed++;
         console.log(`\n========================================`);
-        console.log(`📩 Stock Query from +${senderPhone}: "${text}"`);
+        console.log(`📩 Stock / AI Query from +${senderPhone}: "${text}"`);
         addLog('query', `From +${senderPhone}: "${text}"`);
 
         const lower = text.toLowerCase();
@@ -586,25 +664,35 @@ async function startWhatsAppBot() {
           continue;
         }
 
-        // 2. Try Extracting Stock Symbol for Realtime Analysis
+        // 2. Check if a stock is mentioned
         const stockQuery = extractStockQuery(text);
         let stockResult = null;
 
         if (stockQuery) {
-          console.log(`🔍 Detected Stock Ticker / Name: "${stockQuery}"... Fetching live research data...`);
+          console.log(`🔍 Fetching live data for stock: "${stockQuery}"...`);
           stockResult = await fetchStockAnalysis(stockQuery);
         }
 
-        if (stockResult && stockResult.report) {
+        const words = text.split(/\s+/);
+        const isSimpleTicker = words.length <= 2 && stockResult && stockResult.report;
+
+        // 3. Response Generation
+        if (isSimpleTicker && !appConfig.geminiApiKey && !appConfig.openaiApiKey && !appConfig.groqApiKey) {
+          // If pure ticker query and no LLM key, send instant technical analysis report
           await sock.sendMessage(remoteJid, { text: stockResult.report });
-          console.log(`📊 Sent AI Stock Research Report for ${stockResult.symbol} to +${senderPhone}`);
+          console.log(`📊 Sent Technical Report for ${stockResult.symbol} to +${senderPhone}`);
           addLog('reply', `Report: ${stockResult.symbol} (CMP: ₹${stockResult.cmp}) -> +${senderPhone}`);
+        } else if (isSimpleTicker && (appConfig.geminiApiKey || appConfig.openaiApiKey || appConfig.groqApiKey)) {
+          // Pure ticker with AI enabled -> Send technical report directly
+          await sock.sendMessage(remoteJid, { text: stockResult.report });
+          console.log(`📊 Sent AI Technical Report for ${stockResult.symbol} to +${senderPhone}`);
+          addLog('reply', `Report: ${stockResult.symbol} -> +${senderPhone}`);
         } else {
-          // 3. Fallback to AI Conversational Market Intelligence
-          console.log(`🤖 Generating AI Market Response for: "${text}"...`);
-          const aiResponse = await generateAIAnswer(text);
+          // Conversational question / financial Q&A / stock research question
+          console.log(`🤖 Formulating AI Market Intelligence for: "${text}"...`);
+          const aiResponse = await generateAIAnswer(text, stockResult);
           await sock.sendMessage(remoteJid, { text: aiResponse });
-          console.log(`🤖 Sent AI Market Intelligence Response to +${senderPhone}`);
+          console.log(`🤖 Sent AI Market Intelligence Answer to +${senderPhone}`);
           addLog('reply', `AI Answer -> +${senderPhone}`);
         }
 
@@ -656,6 +744,18 @@ app.get('/api/stock', async (req, res) => {
   res.json(data);
 });
 
+app.post('/api/ask', async (req, res) => {
+  const { question } = req.body;
+  if (!question) return res.status(400).json({ error: 'Question is required' });
+  const stockQuery = extractStockQuery(question);
+  let stockData = null;
+  if (stockQuery) {
+    stockData = await fetchStockAnalysis(stockQuery);
+  }
+  const answer = await generateAIAnswer(question, stockData);
+  res.json({ success: true, answer, stockData });
+});
+
 app.get('/', (req, res) => {
   res.setHeader('Content-Type', 'text/html');
   res.send(`<!DOCTYPE html>
@@ -680,7 +780,7 @@ app.get('/', (req, res) => {
     <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom border-secondary">
       <div>
         <h3 class="fw-bold mb-0" style="color: #38bdf8;"><i class="fa-solid fa-chart-line me-2"></i>AI Stock Research WhatsApp Bot</h3>
-        <p class="text-secondary small mb-0">Realtime Technical Analysis, Indicators & AI Market Intelligence</p>
+        <p class="text-secondary small mb-0">Realtime Technical Indicators, RSI, Moving Averages & AI Financial Q&A</p>
       </div>
       <div class="text-end">
         <span id="statusBadge" class="badge bg-secondary badge-status">Connecting...</span>
@@ -704,17 +804,45 @@ app.get('/', (req, res) => {
       </div>
       <div class="col-md-4">
         <div class="card p-3">
-          <div class="text-secondary small">AI Engine Status</div>
-          <div id="aiEngineStatus" class="fs-6 fw-bold text-info mt-1">Realtime Smart Analytics</div>
+          <div class="text-secondary small">AI Brain Model</div>
+          <div id="aiEngineStatus" class="fs-6 fw-bold text-info mt-1">Loading...</div>
         </div>
       </div>
+    </div>
+
+    <!-- AI API Key Settings -->
+    <div class="card p-3 mb-4 border-info">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="fw-bold text-info mb-0"><i class="fa-solid fa-robot me-2"></i>Connect Free Google Gemini AI Key</h6>
+        <a href="https://aistudio.google.com/app/apikey" target="_blank" class="btn btn-sm btn-outline-info fw-bold">
+          <i class="fa-solid fa-key me-1"></i> Get Free Gemini API Key (1-Click)
+        </a>
+      </div>
+      <p class="text-secondary small mb-2">
+        Gemini AI key lagane se aap WhatsApp par koi bhi deep stock research, question-answer, and company fundamentals pooch sakte hain.
+      </p>
+      <div class="input-group">
+        <input type="password" id="geminiKeyInput" class="form-control bg-dark text-light border-secondary" placeholder="Paste your Google Gemini API Key here (e.g. AIzaSy...)...">
+        <button class="btn btn-primary fw-bold" onclick="saveApiKey()"><i class="fa-solid fa-floppy-disk me-1"></i> Save AI Key</button>
+      </div>
+      <div id="keyAlert" class="small mt-2" style="display:none;"></div>
+    </div>
+
+    <!-- Live AI Q&A & Research Simulator -->
+    <div class="card p-3 mb-4">
+      <h6 class="fw-bold text-warning mb-2"><i class="fa-solid fa-comments me-2"></i>Ask AI Market Research Question (Live Test)</h6>
+      <div class="input-group mb-2">
+        <input type="text" id="aiQuestionInput" class="form-control bg-dark text-light border-secondary" placeholder="e.g. Reliance share buy karu ya sell?, PE ratio kya hai?, Best dividend stocks..." value="Reliance share me invest karna sahi rahega kya?">
+        <button class="btn btn-warning fw-bold text-dark" onclick="askAiQuestion()"><i class="fa-solid fa-brain me-1"></i> Ask AI</button>
+      </div>
+      <div id="aiAnswerBox" class="p-3 bg-dark rounded border border-secondary" style="display:none; white-space: pre-wrap; font-family: monospace; font-size: 13px; max-height: 250px; overflow-y: auto;"></div>
     </div>
 
     <!-- Quick Stock Tickers -->
     <div class="card p-3 mb-4">
       <div class="d-flex justify-content-between align-items-center mb-2">
-        <h6 class="fw-bold text-warning mb-0"><i class="fa-solid fa-bolt me-2"></i>Quick Stock Search & Live Test</h6>
-        <span class="text-secondary small">Click any stock to test</span>
+        <h6 class="fw-bold text-success mb-0"><i class="fa-solid fa-bolt me-2"></i>Quick Stock Search & Live Technical Analysis</h6>
+        <span class="text-secondary small">Click any stock</span>
       </div>
       <div class="mb-3">
         <span class="stock-tag" onclick="testStock('RELIANCE')">RELIANCE</span>
@@ -727,7 +855,7 @@ app.get('/', (req, res) => {
         <span class="stock-tag" onclick="testStock('ITC')">ITC</span>
         <span class="stock-tag" onclick="testStock('NIFTY 50')">NIFTY 50</span>
         <span class="stock-tag" onclick="testStock('BANKNIFTY')">BANK NIFTY</span>
-        <span class="stock-tag" onclick="testStock('AAPL')">APPLE</span>
+        <span class="stock-tag" onclick="testStock('GOLD')">GOLD</span>
         <span class="stock-tag" onclick="testStock('BTC')">BITCOIN</span>
       </div>
       <div class="input-group">
@@ -775,12 +903,73 @@ app.get('/', (req, res) => {
         }
         document.getElementById('queryCount').innerText = data.totalQueriesProcessed || 0;
         
+        const aiStatus = document.getElementById('aiEngineStatus');
+        if (data.hasGeminiKey) {
+          aiStatus.innerHTML = '<span class="text-success">🟢 Google Gemini AI Active</span>';
+        } else if (data.hasOpenAiKey) {
+          aiStatus.innerHTML = '<span class="text-success">🟢 OpenAI Active</span>';
+        } else if (data.hasGroqKey) {
+          aiStatus.innerHTML = '<span class="text-success">🟢 Groq AI Active</span>';
+        } else {
+          aiStatus.innerHTML = '<span class="text-warning">⚡ Built-in Market Intelligence</span>';
+        }
+
         if (data.recentLogs && data.recentLogs.length > 0) {
           document.getElementById('logsContainer').innerHTML = data.recentLogs.map(function(l) {
             return '<div class="py-1 border-bottom border-secondary border-opacity-25"><span class="text-secondary">[' + l.time + ']</span> ' + l.text + '</div>';
           }).join('');
         }
       } catch {}
+    }
+
+    async function saveApiKey() {
+      const key = document.getElementById('geminiKeyInput').value.trim();
+      const alertBox = document.getElementById('keyAlert');
+      if (!key) {
+        alertBox.style.display = 'block';
+        alertBox.className = 'small mt-2 text-danger';
+        alertBox.innerText = 'Please paste a valid Gemini API Key.';
+        return;
+      }
+      try {
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ geminiApiKey: key })
+        });
+        const d = await res.json();
+        alertBox.style.display = 'block';
+        alertBox.className = 'small mt-2 text-success';
+        alertBox.innerText = '✅ Gemini API Key saved successfully! Live AI Research is now active.';
+        updateStatus();
+      } catch (e) {
+        alertBox.style.display = 'block';
+        alertBox.className = 'small mt-2 text-danger';
+        alertBox.innerText = 'Error saving key: ' + e.message;
+      }
+    }
+
+    async function askAiQuestion() {
+      const q = document.getElementById('aiQuestionInput').value.trim();
+      if (!q) return;
+      const box = document.getElementById('aiAnswerBox');
+      box.style.display = 'block';
+      box.innerText = '🤖 AI is analyzing market data and generating research response...';
+      try {
+        const res = await fetch('/api/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: q })
+        });
+        const data = await res.json();
+        if (data.answer) {
+          box.innerText = data.answer;
+        } else {
+          box.innerText = 'No answer generated.';
+        }
+      } catch (e) {
+        box.innerText = 'Error: ' + e.message;
+      }
     }
     
     async function testStock(sym) {
@@ -793,7 +982,7 @@ app.get('/', (req, res) => {
       if (!q) return;
       const out = document.getElementById('stockOutput');
       out.style.display = 'block';
-      out.innerText = '🔍 Fetching live AI technical & fundamental report for ' + q + '...';
+      out.innerText = '🔍 Fetching live AI technical report for ' + q + '...';
       try {
         const res = await fetch('/api/stock?q=' + encodeURIComponent(q));
         const data = await res.json();
