@@ -1,11 +1,10 @@
 /**
- * High-Performance Pure Baileys WhatsApp Bot & Web Dashboard with Live Passing & Group Result Monitor
- * - Auto-joins & listens to Result Group (https://chat.whatsapp.com/KNDH9Jx7PjiLM3cSB1yaKt)
- * - Captures Live Opening Numbers for FB, NFB, GB, ND, PD
- * - Calculates Live Passing & Net Credit
- * - Generates Exact HD Bill Photo Card matching user template
- * - Forwards strictly PURE raw message text to +91 80058 44014 (ZERO extra words)
- * Version: 2.1 (Pure Message Forwarding Mode)
+ * AI Stock Research Assistant - WhatsApp Bot & Live Market Dashboard
+ * - Real-time Stock Market Quotes & Data (NSE, BSE, US Markets, Crypto, Commodities)
+ * - Automated Technical Analysis: RSI (14), 50-day & 200-day Moving Averages
+ * - Support & Resistance Levels, Trade Plan (Entry, Targets, Stop-loss)
+ * - AI Powered Financial Analysis & Conversational Market Intelligence
+ * - Zero betting/lottery code, pure 100% Stock Market & Investment AI
  */
 
 const {
@@ -22,76 +21,28 @@ const fs = require('fs');
 const path = require('path');
 
 // ==================== CONFIGURATION ====================
-const TARGET_PHONE_RAW = '8905381255';
-const TARGET_JID = '918905381255@s.whatsapp.net';
-const MONITORED_SENDERS = ['8003165314', '9785192253', '8005844014'];
 const PORT = process.env.PORT || 2785;
 const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
-const DB_FILE = path.join(__dirname, 'contacts_memory.json');
-const GROUP_INVITE_CODE = 'KNDH9Jx7PjiLM3cSB1yaKt';
+const CONFIG_FILE = path.join(__dirname, 'ai_stock_config.json');
 
-// Memory Persistence
-let userStates = {};
-if (fs.existsSync(DB_FILE)) {
+// Memory Persistence for AI settings
+let appConfig = {
+  geminiApiKey: process.env.GEMINI_API_KEY || '',
+  openaiApiKey: process.env.OPENAI_API_KEY || '',
+  groqApiKey: process.env.GROQ_API_KEY || '',
+};
+
+if (fs.existsSync(CONFIG_FILE)) {
   try {
-    userStates = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    const saved = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    appConfig = { ...appConfig, ...saved };
   } catch {}
 }
 
-function saveStates() {
+function saveConfig() {
   try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(userStates, null, 2), 'utf8');
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(appConfig, null, 2), 'utf8');
   } catch {}
-}
-
-// Daily Winning Numbers / Results Memory File
-const RESULTS_DB_FILE = path.join(__dirname, 'results_memory.json');
-let resultsMemory = {};
-if (fs.existsSync(RESULTS_DB_FILE)) {
-  try {
-    resultsMemory = JSON.parse(fs.readFileSync(RESULTS_DB_FILE, 'utf8'));
-  } catch {}
-}
-
-function saveResults() {
-  try {
-    fs.writeFileSync(RESULTS_DB_FILE, JSON.stringify(resultsMemory, null, 2), 'utf8');
-  } catch {}
-}
-
-// Held / Queued Messages Memory File (Pre-Booking Queue)
-const HELD_DB_FILE = path.join(__dirname, 'held_messages.json');
-let heldMessages = [];
-if (fs.existsSync(HELD_DB_FILE)) {
-  try {
-    heldMessages = JSON.parse(fs.readFileSync(HELD_DB_FILE, 'utf8'));
-    if (!Array.isArray(heldMessages)) heldMessages = [];
-  } catch {}
-}
-
-function saveHeldMessages() {
-  try {
-    fs.writeFileSync(HELD_DB_FILE, JSON.stringify(heldMessages, null, 2), 'utf8');
-  } catch {}
-}
-
-function formatDateDDMMYYYY(d = new Date()) {
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = d.getFullYear();
-  return `${day}-${month}-${year}`;
-}
-
-function getTodayResults(dateStr) {
-  const d = dateStr || formatDateDDMMYYYY();
-  return resultsMemory[d] || {};
-}
-
-function setResultForShift(dateStr, category, number) {
-  const d = dateStr || formatDateDDMMYYYY();
-  if (!resultsMemory[d]) resultsMemory[d] = {};
-  resultsMemory[d][category.toLowerCase()] = String(number).padStart(2, '0');
-  saveResults();
 }
 
 // Bot State
@@ -101,13 +52,17 @@ const botState = {
   qrRaw: null,
   connectedNumber: null,
   startTime: new Date().toISOString(),
-  totalMessagesProcessed: 0,
-  leadsCaptured: 0,
+  totalQueriesProcessed: 0,
   recentLogs: [],
 };
 
 function addLog(type, text) {
-  const time = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const time = new Date().toLocaleTimeString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
   botState.recentLogs.unshift({ time, type, text });
   if (botState.recentLogs.length > 50) botState.recentLogs.pop();
 }
@@ -118,873 +73,412 @@ function isDuplicate(msgId, text, from) {
   const key = msgId || `${from}_${text}`;
   if (processedMessages.has(key)) return true;
   processedMessages.add(key);
-  setTimeout(() => processedMessages.delete(key), 15000);
+  setTimeout(() => processedMessages.delete(key), 12000);
   return false;
 }
 
-// ==================== TSC ENGINE & RESULT PARSER ====================
-const CATEGORIES_MAP = {
-  fb:  ['fb','f.b','faridabad','fd','fs'],
-  nfb: ['nfb','n.f.b','newfb','newfaridabad'],
-  gb:  ['gb','g.b','ghaziabad','gzb','gd'],
-  nd:  ['nd','n.d','gali'],
-  pd:  ['pd','p.d','ds','d.s','desawar']
+// ==================== STOCK TICKER DICTIONARY & ALIASES ====================
+const POPULAR_STOCKS = {
+  'RELIANCE': 'RELIANCE.NS',
+  'TATA MOTORS': 'TMPV.NS',
+  'TATAMOTORS': 'TMPV.NS',
+  'TMCV': 'TMCV.NS',
+  'TMPV': 'TMPV.NS',
+  'TATA STEEL': 'TATASTEEL.NS',
+  'TATASTEEL': 'TATASTEEL.NS',
+  'TCS': 'TCS.NS',
+  'INFY': 'INFY.NS',
+  'INFOSYS': 'INFY.NS',
+  'HDFC': 'HDFCBANK.NS',
+  'HDFCBANK': 'HDFCBANK.NS',
+  'ICICI': 'ICICIBANK.NS',
+  'ICICIBANK': 'ICICIBANK.NS',
+  'SBIN': 'SBIN.NS',
+  'SBI': 'SBIN.NS',
+  'SUZLON': 'SUZLON.NS',
+  'ZOMATO': 'ZOMATO.NS',
+  'ITC': 'ITC.NS',
+  'WIPRO': 'WIPRO.NS',
+  'ADANIENT': 'ADANIENT.NS',
+  'ADANI PORTS': 'ADANIPORTS.NS',
+  'ADANIPORTS': 'ADANIPORTS.NS',
+  'ADANIPOWER': 'ADANIPOWER.NS',
+  'BAJFINANCE': 'BAJFINANCE.NS',
+  'BAJAJ FINANCE': 'BAJFINANCE.NS',
+  'BAJAJ AUTO': 'BAJAJ-AUTO.NS',
+  'BHARTI AIRTEL': 'BHARTIARTL.NS',
+  'AIRTEL': 'BHARTIARTL.NS',
+  'L&T': 'LT.NS',
+  'LT': 'LT.NS',
+  'LARSEN': 'LT.NS',
+  'MARUTI': 'MARUTI.NS',
+  'M&M': 'M&M.NS',
+  'MAHINDRA': 'M&M.NS',
+  'HINDUNILVR': 'HINDUNILVR.NS',
+  'HUL': 'HINDUNILVR.NS',
+  'KOTAKBANK': 'KOTAKBANK.NS',
+  'KOTAK': 'KOTAKBANK.NS',
+  'AXISBANK': 'AXISBANK.NS',
+  'AXIS': 'AXISBANK.NS',
+  'TITAN': 'TITAN.NS',
+  'ASIANPAINTS': 'ASIANPAINT.NS',
+  'ASIAN PAINT': 'ASIANPAINT.NS',
+  'HAL': 'HAL.NS',
+  'BEL': 'BEL.NS',
+  'BHEL': 'BHEL.NS',
+  'IREDA': 'IREDA.NS',
+  'IRFC': 'IRFC.NS',
+  'RVNL': 'RVNL.NS',
+  'NHPC': 'NHPC.NS',
+  'TRENT': 'TRENT.NS',
+  'VEDANTA': 'VEDL.NS',
+  'VEDL': 'VEDL.NS',
+  'COAL INDIA': 'COALINDIA.NS',
+  'COALINDIA': 'COALINDIA.NS',
+  'ONGC': 'ONGC.NS',
+  'NTPC': 'NTPC.NS',
+  'POWERGRID': 'POWERGRID.NS',
+  'IOC': 'IOC.NS',
+  'BPCL': 'BPCL.NS',
+  'YES BANK': 'YESBANK.NS',
+  'YESBANK': 'YESBANK.NS',
+  'IDEA': 'IDEA.NS',
+  'VODAFONE IDEA': 'IDEA.NS',
+  'PAYTM': 'PAYTM.NS',
+  'NYKAA': 'NYKAA.NS',
+  'POLICYBAZAAR': 'POLICYBZR.NS',
+  'NIFTY': '^NSEI',
+  'NIFTY50': '^NSEI',
+  'NIFTY 50': '^NSEI',
+  'BANKNIFTY': '^NSEBANK',
+  'BANK NIFTY': '^NSEBANK',
+  'SENSEX': '^BSESN',
+  'GOLD': 'GC=F',
+  'SILVER': 'SI=F',
+  'CRUDE': 'CL=F',
+  'CRUDE OIL': 'CL=F',
+  'BITCOIN': 'BTC-USD',
+  'BTC': 'BTC-USD',
+  'ETH': 'ETH-USD',
+  'ETHEREUM': 'ETH-USD',
+  'APPLE': 'AAPL',
+  'TESLA': 'TSLA',
+  'MICROSOFT': 'MSFT',
+  'NVIDIA': 'NVDA',
+  'GOOGLE': 'GOOGL',
+  'AMAZON': 'AMZN',
+  'META': 'META'
 };
-const CATEGORY_KEYS   = ['fb','nfb','gb','nd','pd'];
-const SHIFT_NAMES = {
-  fb: 'FARIDABAD',
-  nfb: 'NEW FB',
-  gb: 'GAZIABAAD',
-  nd: 'GALI',
-  pd: 'DESHAWER'
-};
-const TRIPLE_NUMBERS  = ['111','222','333','444','555','666','777','888','999','000'];
 
-function formatINR(val) {
-  return Number(val || 0).toLocaleString('en-IN');
-}
+// ==================== STOCK DATA & TECHNICAL ENGINE ====================
+async function resolveSymbol(rawQuery) {
+  const clean = rawQuery.trim();
+  const upper = clean.toUpperCase();
 
-// ==================== SHIFT TIMING & CUTOFF CONFIGURATION ====================
-// Shift Time Windows (IST - Asia/Kolkata):
-// FB: 3:00 PM (15:00) to 5:50 PM (17:50) -> At 5:51 PM is "Not ok" & NO forward
-// GB: 6:30 PM (18:30) to 9:50 PM (21:50) -> At 9:51 PM is "Not ok" & NO forward
-// ND: 10:00 PM (22:00) to 11:30 PM (23:30) -> At 11:31 PM is "Not ok" & NO forward
-// PD: 11:00 PM (23:00) to 3:00 AM next day (03:00) -> At 3:01 AM is "Not ok" & NO forward
-const SHIFT_TIME_WINDOWS = {
-  fb: {
-    name: 'FARIDABAD',
-    startMin: 15 * 60 + 0,   // 3:00 PM (900 min)
-    endMin: 17 * 60 + 50,    // 5:50 PM (1070 min) -> 5:51 PM is Not ok
-    isOvernight: false,
-    display: '3:00 PM - 5:50 PM'
-  },
-  nfb: {
-    name: 'NEW FB',
-    startMin: 15 * 60 + 0,   // 3:00 PM (900 min)
-    endMin: 19 * 60 + 0,     // 7:00 PM (1140 min)
-    isOvernight: false,
-    display: '3:00 PM - 7:00 PM'
-  },
-  gb: {
-    name: 'GAZIABAAD',
-    startMin: 18 * 60 + 30,  // 6:30 PM (1110 min)
-    endMin: 21 * 60 + 50,    // 9:50 PM (1310 min) -> 9:51 PM is Not ok
-    isOvernight: false,
-    display: '6:30 PM - 9:50 PM'
-  },
-  nd: {
-    name: 'GALI',
-    startMin: 22 * 60 + 0,   // 10:00 PM (1320 min)
-    endMin: 23 * 60 + 30,    // 11:30 PM (1410 min) -> 11:31 PM is Not ok
-    isOvernight: false,
-    display: '10:00 PM - 11:30 PM'
-  },
-  pd: {
-    name: 'DESHAWER',
-    startMin: 23 * 60 + 0,   // 11:00 PM (1380 min)
-    endMin: 3 * 60 + 0,      // 3:00 AM next morning (180 min) -> 3:01 AM is Not ok
-    isOvernight: true,
-    display: '11:00 PM - 3:00 AM'
-  }
-};
+  // Check alias map
+  if (POPULAR_STOCKS[upper]) return POPULAR_STOCKS[upper];
 
-function getKolkataTime() {
-  const formatter = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kolkata',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  });
-  const parts = formatter.formatToParts(new Date());
-  let hour = 0, minute = 0, second = 0;
-  for (const p of parts) {
-    if (p.type === 'hour') hour = parseInt(p.value, 10);
-    if (p.type === 'minute') minute = parseInt(p.value, 10);
-    if (p.type === 'second') second = parseInt(p.value, 10);
-  }
-  const totalMinutes = hour * 60 + minute;
-  const timeFormatted = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-  return { hour, minute, second, totalMinutes, timeFormatted };
-}
-
-function isShiftTimeOpen(catKey, totalMinutes) {
-  const cfg = SHIFT_TIME_WINDOWS[catKey.toLowerCase()];
-  if (!cfg) return true;
-  if (cfg.isOvernight) {
-    return totalMinutes >= cfg.startMin || totalMinutes <= cfg.endMin;
-  } else {
-    return totalMinutes >= cfg.startMin && totalMinutes <= cfg.endMin;
-  }
-}
-
-function getShiftStatus(catKey, totalMinutes) {
-  const key = catKey.toLowerCase();
-  
-  if (key === 'fb') {
-    // Window: 15:00 (900) - 17:50 (1070)
-    if (totalMinutes >= 900 && totalMinutes <= 1070) return 'OPEN';
-    if (totalMinutes < 900 && totalMinutes >= 360) return 'FUTURE'; // 6 AM to 3 PM
-    return 'EXPIRED'; // After 5:50 PM
-  }
-  
-  if (key === 'gb') {
-    // Window: 18:30 (1110) - 21:50 (1310)
-    if (totalMinutes >= 1110 && totalMinutes <= 1310) return 'OPEN';
-    if (totalMinutes < 1110 && totalMinutes >= 360) return 'FUTURE'; // before 6:30 PM (e.g. during FB)
-    return 'EXPIRED'; // After 9:50 PM
-  }
-  
-  if (key === 'nd') {
-    // Window: 22:00 (1320) - 23:30 (1410)
-    if (totalMinutes >= 1320 && totalMinutes <= 1410) return 'OPEN';
-    if (totalMinutes < 1320 && totalMinutes >= 360) return 'FUTURE'; // before 10 PM (e.g. during FB or GB)
-    return 'EXPIRED'; // After 11:30 PM
-  }
-  
-  if (key === 'pd') {
-    // Window: 23:00 (1380) - 3:00 AM (180)
-    if (totalMinutes >= 1380 || totalMinutes <= 180) return 'OPEN';
-    if (totalMinutes >= 600 && totalMinutes < 1380) return 'FUTURE'; // 10 AM to 11 PM (e.g. during FB, GB, ND)
-    return 'EXPIRED'; // 3:01 AM to 10:00 AM
-  }
-  
-  if (key === 'nfb') {
-    if (totalMinutes >= 900 && totalMinutes <= 1140) return 'OPEN';
-    if (totalMinutes < 900 && totalMinutes >= 360) return 'FUTURE';
-    return 'EXPIRED';
-  }
-  
-  return 'OPEN';
-}
-
-function getActiveShift(totalMinutes) {
-  for (const k of ['fb', 'gb', 'nd', 'pd', 'nfb']) {
-    if (isShiftTimeOpen(k, totalMinutes)) return k;
-  }
-  return null;
-}
-
-function isBetMessage(text) {
-  if (!text || typeof text !== 'string') return false;
-  const clean = text.trim();
-  
-  // Must contain numbers
-  if (!/\d/.test(clean)) return false;
-
-  // 1. Bracket containing numbers e.g. (20), (500), [100], {50}
-  const hasBracketAmount = /[\(\[\{]\s*\d+\s*[\)\]\}]/.test(clean);
-  // 2. Multiplier / into notation e.g. 12*50, 12 into 50, 12x50, 12=50, 12-50, 12/50
-  const hasIntoAmount = /\b\d{1,3}\s*(?:into|int|in|x|\*|=|-|\/)\s*\d{1,6}\b/i.test(clean);
-  // 3. Shift keyword present with numbers e.g. "12,12 fb", "12.45 gb", "25 nd"
-  const hasShift = /(?:^|[^a-z0-9])(fb|f\.b|faridabad|fd|gb|g\.b|ghaziabad|gzb|gd|nd|n\.d|gali|pd|p\.d|ds|d\.s|desawar|nfb)(?:$|[^a-z0-9])/i.test(clean);
-  // 4. Haruf / Andar-Bahar keywords e.g. "andar 1(100)", "bahar 2(50)"
-  const hasHaruf = /(?:^|[^a-z0-9])(andar|bahar|a|b|ab|abc|all|cross|r|palti)(?:$|[^a-z0-9])/i.test(clean);
-
-  if (hasBracketAmount || hasIntoAmount) return true;
-  if (hasShift && /\d/.test(clean)) return true;
-  if (hasHaruf && /\d/.test(clean)) return true;
-
-  return false;
-}
-
-function detectShiftsInText(text) {
-  if (!text || typeof text !== 'string') return [];
-  const clean = text.toLowerCase();
-  const matched = new Set();
-  for (const k of CATEGORY_KEYS) {
-    for (const a of CATEGORIES_MAP[k]) {
-      const rx = new RegExp('(?:^|[^a-z0-9])' + a.replace(/\./g, '\\.?') + '(?:$|[^a-z0-9])', 'i');
-      if (rx.test(clean)) {
-        matched.add(k);
-        break;
-      }
-    }
-  }
-  return Array.from(matched);
-}
-
-function checkMessageTimeValidity(text, calc) {
-  const { hour, minute, totalMinutes, timeFormatted } = getKolkataTime();
-  
-  // 1. Check if it's a valid bet message
-  if (!isBetMessage(text)) {
-    return {
-      isBet: false,
-      valid: false,
-      status: 'INVALID',
-      reason: 'Not a valid bet message format',
-      replyText: 'Not ok',
-      shouldReply: true,
-      shouldForward: false,
-      shouldHold: false,
-      timeFormatted
-    };
+  // If ends with .NS, .BO, .US, or starts with ^, use directly
+  if (upper.includes('.') || upper.startsWith('^') || upper.includes('-') || upper.includes('=')) {
+    return upper;
   }
 
-  // 2. Find shifts in text or calculation (breakdown is an Object: breakdown[k] = r)
-  const shiftsFound = new Set(detectShiftsInText(text));
-  if (calc && calc.breakdown) {
-    for (const key of Object.keys(calc.breakdown)) {
-      if (calc.breakdown[key] && calc.breakdown[key].tSale > 0) {
-        shiftsFound.add(key.toLowerCase());
-      }
-    }
-  }
-
-  let shiftList = Array.from(shiftsFound);
-
-  // If no explicit shift written (e.g. "12,12(20)"), check current active shift
-  if (shiftList.length === 0) {
-    const activeShift = getActiveShift(totalMinutes);
-    if (activeShift) {
-      shiftList = [activeShift];
-    } else {
-      return {
-        isBet: true,
-        valid: false,
-        status: 'EXPIRED',
-        reason: `No shift currently open at ${timeFormatted} IST`,
-        replyText: 'Not ok',
-        shouldReply: true,
-        shouldForward: false,
-        shouldHold: false,
-        timeFormatted,
-        closedShifts: []
-      };
-    }
-  }
-
-  // 3. Classify each shift status: OPEN, FUTURE, or EXPIRED
-  const openShifts = [];
-  const futureShifts = [];
-  const expiredShifts = [];
-
-  for (const s of shiftList) {
-    const st = getShiftStatus(s, totalMinutes);
-    if (st === 'OPEN') openShifts.push(s);
-    else if (st === 'FUTURE') futureShifts.push(s);
-    else expiredShifts.push(s);
-  }
-
-  // Case A: At least one shift is OPEN right now!
-  if (openShifts.length > 0) {
-    const primaryShift = openShifts[0].toLowerCase();
-    const okReply = `${primaryShift} ok`;
-    return {
-      isBet: true,
-      valid: true,
-      status: 'OPEN',
-      targetShift: primaryShift,
-      reason: `Open shift(s): ${openShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ')}`,
-      replyText: okReply,
-      shouldReply: true,
-      shouldForward: true,
-      shouldHold: false,
-      timeFormatted,
-      openShifts,
-      futureShifts,
-      expiredShifts
-    };
-  }
-
-  // Case B: No shifts open right now, but FUTURE shifts exist (e.g. GB or ND or PD sent in advance)
-  // USER REQUIREMENT: Reply "Abhi time nahi hua hai <shift> ka", hold in queue, then send "<shift> ok" and forward when shift opens!
-  if (futureShifts.length > 0) {
-    const targetShift = futureShifts[0].toLowerCase();
-    return {
-      isBet: true,
-      valid: false,
-      status: 'FUTURE',
-      targetShift: targetShift,
-      reason: `Held for future shift: ${SHIFT_NAMES[targetShift] || targetShift.toUpperCase()} (${SHIFT_TIME_WINDOWS[targetShift]?.display})`,
-      replyText: `Abhi time nahi hua hai ${targetShift} ka`,
-      shouldReply: true,
-      shouldForward: false,
-      shouldHold: true,
-      timeFormatted,
-      openShifts,
-      futureShifts,
-      expiredShifts
-    };
-  }
-
-  // Case C: ALL shifts are EXPIRED (e.g. FB sent during GB at 8 PM)
-  const expiredNames = expiredShifts.map(s => SHIFT_NAMES[s] || s.toUpperCase()).join(', ');
-  return {
-    isBet: true,
-    valid: false,
-    status: 'EXPIRED',
-    reason: `Time closed for shift(s): ${expiredNames} at ${timeFormatted} IST`,
-    replyText: 'Not ok',
-    shouldReply: true,
-    shouldForward: false,
-    shouldHold: false,
-    timeFormatted,
-    openShifts,
-    futureShifts,
-    expiredShifts
-  };
-}
-
-// Result / Find Message Parser
-function parseResultMessage(text) {
-  if (!text || typeof text !== 'string') return [];
-  const results = [];
-  const lines = text.split('\n');
-
-  for (const rawLine of lines) {
-    let line = rawLine.trim();
-    if (!line) continue;
-
-    line = line.replace(/^\[[^\]]+\]\s*[^:]*:\s*/, '').trim();
-
-    const cleanText = line.toLowerCase().replace(/[\s\.\*#:,-@=\_"]/g, '');
-    let matchedCat = null;
-    let matchedAlias = '';
-
-    for (const k of CATEGORY_KEYS) {
-      for (const a of CATEGORIES_MAP[k]) {
-        if (cleanText.includes(a.replace(/\./g, ''))) {
-          matchedCat = k;
-          matchedAlias = a;
-          break;
-        }
-      }
-      if (matchedCat) break;
-    }
-
-    if (!matchedCat) continue;
-
-    let numArea = line;
-    if (matchedAlias) numArea = numArea.replace(new RegExp(matchedAlias, 'gi'), ' ');
-    const digits = numArea.match(/\b\d{1,3}\b/g) || [];
-
-    for (const d of digits) {
-      const val = parseInt(d, 10);
-      if (d.length === 2 && val >= 0 && val <= 99) {
-        results.push({ category: matchedCat, number: String(val).padStart(2, '0') });
-        break;
-      } else if (d === '100' || val === 100) {
-        results.push({ category: matchedCat, number: '00' });
-        break;
-      } else if (d.length === 1 && val >= 0 && val <= 9) {
-        results.push({ category: matchedCat, number: String(val).padStart(2, '0') });
-        break;
-      }
-    }
-  }
-
-  return results;
-}
-
-// Robust Bet Row Parser
-function parseTSCRow(raw, inherited) {
-  const entries = [];
-  if (!raw || !raw.trim()) return entries;
-  let row = raw.trim();
-
-  // Strip WhatsApp forwarding / timestamp prefixes
-  row = row.replace(/^\[[^\]]+\]\s*[^:]*:\s*/, '').trim();
-
-  // Normalize delimiters & common amount patterns into (amount)
-  let normalized = row
-    .replace(/(?:into|int|in|x|\*|=|-|\/)\s*(\d{1,6})/gi, ' ($1) ')
-    .replace(/[\[\{]/g, '(')
-    .replace(/[\]\}]/g, ')')
-    .replace(/["']/g, ' ')
-    .trim();
-
-  // Find all category occurrences
-  const catMatches = [];
-  for (const k of CATEGORY_KEYS) {
-    for (const a of CATEGORIES_MAP[k]) {
-      const rx = new RegExp('\\b' + a.replace(/\./g, '\\.?') + '\\b', 'gi');
-      let m;
-      while ((m = rx.exec(normalized)) !== null) {
-        catMatches.push({ index: m.index, endIndex: m.index + m[0].length, cat: k, alias: m[0] });
-      }
-    }
-  }
-
-  catMatches.sort((a, b) => a.index - b.index);
-
-  let segments = [];
-  if (catMatches.length === 0) {
-    if (inherited) segments.push({ text: normalized, cat: inherited, alias: '' });
-  } else if (catMatches.length === 1) {
-    segments.push({ text: normalized, cat: catMatches[0].cat, alias: catMatches[0].alias });
-  } else {
-    const hasDigitsBeforeFirstCat = /\d/.test(normalized.substring(0, catMatches[0].index));
-    let prevCut = 0;
-    if (hasDigitsBeforeFirstCat) {
-      for (let i = 0; i < catMatches.length; i++) {
-        const cur = catMatches[i];
-        const cutEnd = (i === catMatches.length - 1) ? normalized.length : cur.endIndex;
-        const segText = normalized.substring(prevCut, cutEnd);
-        segments.push({ text: segText, cat: cur.cat, alias: cur.alias });
-        prevCut = cur.endIndex;
-      }
-    } else {
-      for (let i = 0; i < catMatches.length; i++) {
-        const cur = catMatches[i];
-        const cutEnd = (i + 1 < catMatches.length) ? catMatches[i + 1].index : normalized.length;
-        const segText = normalized.substring(cur.index, cutEnd);
-        segments.push({ text: segText, cat: cur.cat, alias: cur.alias });
-      }
-    }
-  }
-
-  for (const seg of segments) {
-    let cat = seg.cat;
-    if (!cat) continue;
-    let area = seg.text;
-    if (seg.alias) {
-      area = area.replace(new RegExp('\\b' + seg.alias.replace(/\./g, '\\.?') + '\\b', 'gi'), ' ');
-    }
-
-    const isDbl = /\b(ab|abc)\b/i.test(area);
-    const parts = area.split(/(\(\d+\))/).map(p => p.trim()).filter(p => p.length > 0);
-
-    for (let i = 0; i < parts.length; i++) {
-      const na = parts[i];
-      if (na.startsWith('(') && na.endsWith(')')) continue;
-      const bp = parts[i + 1];
-      let bv = 1;
-      if (bp && bp.startsWith('(') && bp.endsWith(')')) {
-        bv = parseInt(bp.slice(1, -1), 10) || 1;
-        i++;
-      }
-
-      const nums = [];
-      const rRx = /(\d{1,2})\s*[^\w\d]*to[^\w\d]*\s*(\d{1,2})/gi;
-      let rm2;
-      while ((rm2 = rRx.exec(na)) !== null) {
-        const [, a, b] = rm2;
-        const sa = parseInt(a, 10), eb = parseInt(b, 10);
-        if (sa >= 1 && eb <= 100 && sa <= eb) {
-          for (let n = sa; n <= eb; n++) nums.push(String(n).padStart(2, '0'));
-        }
-      }
-
-      const stripped = na.replace(rRx, ' ');
-      for (const n of (stripped.match(/\b\d{1,3}\b/g) || [])) {
-        const v = parseInt(n, 10);
-        if (n.length === 2 && v >= 0 && v <= 99) nums.push(String(v).padStart(2, '0'));
-        else if (n.length === 1 && v >= 0 && v <= 9) nums.push(String(v).padStart(2, '0'));
-        else if (n === '100' || v === 100) nums.push('100');
-        else if (n.length === 3 && TRIPLE_NUMBERS.includes(n)) nums.push(n);
-      }
-
-      if (nums.length > 0) {
-        entries.push({ numbers: [...new Set(nums)], bracketValue: bv, category: cat, isDouble: isDbl });
-      }
-    }
-  }
-
-  return entries;
-}
-
-// Complete Passing Calculation Engine matching tsc-pro
-function calculatePassingReport(text, winningNumbers = {}, rateStr = '90/10') {
-  const [payoutVal, commVal] = rateStr.split('/').map(Number);
-  const jodiMultiplier = isNaN(payoutVal) ? 90 : payoutVal;
-  const harufMultiplier = 9;
-  const commPercent = (isNaN(commVal) ? 10 : commVal) / 100;
-
-  const res = {};
-  for (const k of CATEGORY_KEYS) {
-    res[k] = {
-      tSale: 0,
-      dSale: 0,
-      aSale: 0,
-      oDara: 0,
-      oAkhar: 0,
-      debit: 0,
-      comm: 0,
-      credit: 0,
-      jodiCount: 0,
-      harufCount: 0,
-      winningNumber: winningNumbers[k] || ''
-    };
-  }
-
-  const rows = text.split('\n').map(r=>r.trim()).filter(r=>r.length>0);
-  let curCat = null;
-
-  for (let i = 0; i < rows.length; i++) {
-    const ents = parseTSCRow(rows[i], curCat);
-    if (ents.length > 0) curCat = ents[ents.length - 1].category;
-
-    for (const e of ents) {
-      const cat = e.category;
-      const mul = e.isDouble ? 2 : 1;
-      const bracket = e.bracketValue;
-      const findStr = winningNumbers[cat] ? String(winningNumbers[cat]).padStart(2, '0') : '';
-
-      let j = 0, h = 0;
-      let winningJodiCount = 0;
-      let winningAkharCount = 0;
-
-      for (const n of e.numbers) {
-        if (n.length === 2 || n === '100') {
-          j++;
-          if (findStr) {
-            const normNum = n === '100' ? '00' : n;
-            const normFindStr = findStr === '100' ? '00' : findStr;
-            if (normNum === normFindStr) {
-              winningJodiCount++;
-            } else if (e.isDouble) {
-              const reversedNum = normNum[1] + normNum[0];
-              if (reversedNum === normFindStr) {
-                winningJodiCount++;
-              }
-            }
-          }
-        } else if (n.length === 3 && TRIPLE_NUMBERS.includes(n)) {
-          h++;
-          if (findStr && findStr.length === 2) {
-            const findLastDigit = parseInt(findStr[1], 10);
-            const tripleDigit = parseInt(n[0], 10);
-            if (tripleDigit === findLastDigit) {
-              winningAkharCount++;
-            }
-          }
-        }
-      }
-
-      res[cat].dSale += j * bracket * mul;
-      res[cat].aSale += h * bracket * mul;
-      res[cat].tSale += (j + h) * bracket * mul;
-      res[cat].jodiCount += j;
-      res[cat].harufCount += h;
-      res[cat].oDara += winningJodiCount * bracket;
-      res[cat].oAkhar += winningAkharCount * bracket;
-    }
-  }
-
-  let grandTSale = 0, grandODara = 0, grandOAkhar = 0, grandDebit = 0, grandComm = 0, grandNetBalance = 0;
-  const breakdown = {};
-
-  for (const k of CATEGORY_KEYS) {
-    const r = res[k];
-    if (r.tSale > 0) {
-      r.debit = (r.oDara * jodiMultiplier) + (r.oAkhar * harufMultiplier);
-      r.comm = r.tSale - Math.round(r.tSale * commPercent);
-      r.credit = r.comm - r.debit;
-
-      grandTSale += r.tSale;
-      grandODara += r.oDara;
-      grandOAkhar += r.oAkhar;
-      grandDebit += r.debit;
-      grandComm += r.comm;
-      grandNetBalance += r.credit;
-
-      breakdown[k] = r;
-    }
-  }
-
-  return {
-    grandTSale,
-    grandODara,
-    grandOAkhar,
-    grandDebit,
-    grandComm,
-    grandNetBalance,
-    breakdown,
-    rateLabel: `${rateStr}-9/10`
-  };
-}
-
-let canvasModule = null;
-try {
-  canvasModule = require('@napi-rs/canvas');
-} catch {}
-
-function generateExactBillImageWithPassing(data) {
-  if (!canvasModule) return null;
+  // Try Yahoo Search
   try {
-    const { createCanvas } = canvasModule;
-    const dateStr = data.date || formatDateDDMMYYYY();
-    const userName = data.userName || 'DEFAULT';
-    const rateLabel = data.rateLabel || '90/10-9/10';
+    const sUrl = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(clean)}&quotesCount=3&newsCount=0`;
+    const sRes = await fetch(sUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+    });
+    const sData = await sRes.json();
+    if (sData?.quotes?.length > 0) {
+      return sData.quotes[0].symbol;
+    }
+  } catch {}
 
-    const rows = [];
-    const breakdown = data.breakdown || {};
-    let sr = 1;
+  // Default to NSE
+  return `${upper}.NS`;
+}
 
-    for (const key of CATEGORY_KEYS) {
-      if (breakdown[key] && breakdown[key].tSale > 0) {
-        const item = breakdown[key];
-        const shiftName = SHIFT_NAMES[key] || key.toUpperCase();
-        const winNumSuffix = item.winningNumber ? ` (${item.winningNumber})` : '';
+async function fetchStockAnalysis(query) {
+  try {
+    const symbol = await resolveSymbol(query);
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1y`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+    });
+    const json = await res.json();
+    const res0 = json?.chart?.result?.[0];
+    if (!res0) return null;
 
-        rows.push({
-          sr: sr++,
-          shift: `${shiftName}${winNumSuffix}`,
-          rate: rateLabel,
-          tSale: item.tSale,
-          oDara: item.oDara,
-          oAkhar: item.oAkhar,
-          debit: item.debit,
-          comm: item.comm,
-          credit: item.credit
-        });
+    const meta = res0.meta;
+    const quotes = res0.indicators?.quote?.[0];
+    const rawCloses = quotes?.close?.filter((c) => c !== null && !isNaN(c)) || [];
+    const rawHighs = quotes?.high?.filter((c) => c !== null && !isNaN(c)) || [];
+    const rawLows = quotes?.low?.filter((c) => c !== null && !isNaN(c)) || [];
+    const rawVolumes = quotes?.volume?.filter((c) => c !== null && !isNaN(c)) || [];
+
+    if (rawCloses.length === 0) return null;
+
+    const cmp = meta.regularMarketPrice || rawCloses[rawCloses.length - 1];
+    const prevClose = meta.chartPreviousClose || rawCloses[rawCloses.length - 2] || cmp;
+    const change = cmp - prevClose;
+    const changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
+    const isPositive = change >= 0;
+
+    // Technical SMA 50 & SMA 200
+    const sma50Closes = rawCloses.slice(-50);
+    const sma50 = sma50Closes.reduce((a, b) => a + b, 0) / (sma50Closes.length || 1);
+
+    const sma200Closes = rawCloses.slice(-200);
+    const sma200 = sma200Closes.reduce((a, b) => a + b, 0) / (sma200Closes.length || 1);
+
+    // RSI (14-period)
+    let rsi = 50;
+    if (rawCloses.length >= 15) {
+      let gains = 0, losses = 0;
+      for (let i = rawCloses.length - 14; i < rawCloses.length; i++) {
+        const diff = rawCloses[i] - rawCloses[i - 1];
+        if (diff >= 0) gains += diff;
+        else losses += Math.abs(diff);
+      }
+      const avgGain = gains / 14;
+      const avgLoss = losses / 14;
+      if (avgLoss === 0) rsi = 100;
+      else {
+        const rs = avgGain / avgLoss;
+        rsi = 100 - (100 / (1 + rs));
       }
     }
 
-    if (rows.length === 0) {
-      rows.push({
-        sr: 1,
-        shift: 'FARIDABAD',
-        rate: rateLabel,
-        tSale: data.grandTSale || 0,
-        oDara: 0,
-        oAkhar: 0,
-        debit: 0,
-        comm: data.grandComm || 0,
-        credit: data.grandNetBalance || 0
-      });
+    // Support and Resistance (Swing high/low of last 30 days)
+    const recent30Lows = rawLows.slice(-30);
+    const recent30Highs = rawHighs.slice(-30);
+    const s1 = recent30Lows.length > 0 ? Math.min(...recent30Lows) : cmp * 0.95;
+    const r1 = recent30Highs.length > 0 ? Math.max(...recent30Highs) : cmp * 1.05;
+    const s2 = s1 * 0.96;
+    const r2 = r1 * 1.04;
+
+    // Trend determination
+    let trend = '🟡 NEUTRAL / CONSOLIDATION';
+    let trendSignal = 'ACCUMULATE ON DIPS';
+    if (cmp > sma50 && sma50 > sma200) {
+      trend = '🟢 STRONG BULLISH (Up-Trend)';
+      trendSignal = 'BUY ON DIPS (Strong Trend)';
+    } else if (cmp > sma200) {
+      trend = '🟢 MODERATE BULLISH (Above 200 SMA)';
+      trendSignal = 'BUY WITH STRICT STOP-LOSS';
+    } else if (cmp < sma50 && cmp < sma200) {
+      trend = '🔴 BEARISH (Down-Trend)';
+      trendSignal = 'CAUTION / WAIT FOR REVERSAL';
+    } else if (cmp < sma50 && cmp > sma200) {
+      trend = '🟡 PULLBACK / CORRECTION';
+      trendSignal = 'WATCH SUPPORT AT 200 SMA';
     }
 
-    const padding = 16;
-    const cardWidth = 860;
-    const tableWidth = cardWidth - (padding * 2);
-    const cols = [
-      { label: 'SR.', width: 48, align: 'center' },
-      { label: 'SHIFT', width: 160, align: 'center' },
-      { label: 'RATE', width: 100, align: 'center' },
-      { label: 'T-SALE', width: 95, align: 'center' },
-      { label: 'O-DARA', width: 80, align: 'center' },
-      { label: 'O-AKHAR', width: 80, align: 'center' },
-      { label: 'DEBIT', width: 80, align: 'center' },
-      { label: 'COMM', width: 90, align: 'center' },
-      { label: 'CREDIT', width: 95, align: 'center' },
-    ];
+    // RSI Interpretation
+    let rsiZone = 'Neutral Zone (40-60)';
+    if (rsi >= 70) rsiZone = '⚠️ Overbought (>70) - Watch for Profit Booking';
+    else if (rsi <= 30) rsiZone = '🔥 Oversold (<30) - Potential Rebound / Value Buying';
+    else if (rsi > 60) rsiZone = 'Bullish Momentum (60-70)';
+    else if (rsi < 40) rsiZone = 'Weak Momentum (30-40)';
 
-    const headerHeight = 46;
-    const tableHeaderHeight = 36;
-    const rowHeight = 34;
-    const totalRowHeight = 34;
-    const footerRowHeight = 40;
-    const tableMarginTop = 14;
-    const tableMarginBottom = 14;
+    const curr = meta.currency === 'INR' ? '₹' : (meta.currency === 'USD' ? '$' : `${meta.currency} `);
+    const companyName = meta.longName || meta.shortName || symbol;
 
-    const cardInnerHeight = headerHeight + tableMarginTop + tableHeaderHeight + (rows.length * rowHeight) + totalRowHeight + footerRowHeight + tableMarginBottom;
-    const canvasWidth = cardWidth + 32;
-    const canvasHeight = cardInnerHeight + 32;
+    // Target Projections
+    const shortTermTarget = (cmp * 1.05).toFixed(2);
+    const mediumTermTarget = (cmp * 1.12).toFixed(2);
+    const stopLoss = (cmp * 0.95).toFixed(2);
 
-    const canvas = createCanvas(canvasWidth, canvasHeight);
-    const ctx = canvas.getContext('2d');
+    const report = `📊 *AI STOCK RESEARCH REPORT* 📊
+━━━━━━━━━━━━━━━━━━━━━
+🏢 *${companyName}*
+📌 *Ticker:* \`${symbol}\` | *Exchange:* ${meta.exchangeName || meta.fullExchangeName || 'NSE'}
 
-    // Background
-    ctx.fillStyle = '#1e293b';
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+💰 *Current Market Price (CMP):* ${curr}${cmp.toFixed(2)}
+📈 *Today's Change:* ${isPositive ? '🟢 +' : '🔴 '}${change.toFixed(2)} (${isPositive ? '+' : ''}${changePct.toFixed(2)}%)
+📊 *Day's Range:* ${curr}${meta.regularMarketDayLow || 'N/A'} - ${curr}${meta.regularMarketDayHigh || 'N/A'}
+🏔️ *52-Week Range:* ${curr}${meta.fiftyTwoWeekLow || 'N/A'} - ${curr}${meta.fiftyTwoWeekHigh || 'N/A'}
+📦 *Volume:* ${Number(meta.regularMarketVolume || 0).toLocaleString('en-IN')}
 
-    const cardX = 16;
-    const cardY = 16;
-    const cardH = cardInnerHeight;
-    const cardRadius = 12;
+━━━━━━━━━━━━━━━━━━━━━
+📈 *TECHNICAL ANALYSIS & INDICATORS*
+• *Trend:* ${trend}
+• *RSI (14):* ${rsi.toFixed(1)} (${rsiZone})
+• *50-Day SMA:* ${curr}${sma50.toFixed(2)} (${cmp > sma50 ? 'Above 50 SMA 🟢' : 'Below 50 SMA 🔴'})
+• *200-Day SMA:* ${curr}${sma200.toFixed(2)} (${cmp > sma200 ? 'Above 200 SMA 🟢' : 'Below 200 SMA 🔴'})
 
-    function roundRect(x, y, w, h, radius, fill, stroke) {
-      ctx.beginPath();
-      ctx.moveTo(x + radius, y);
-      ctx.lineTo(x + w - radius, y);
-      ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
-      ctx.lineTo(x + w, y + h - radius);
-      ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
-      ctx.lineTo(x + radius, y + h);
-      ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
-      ctx.lineTo(x, y + radius);
-      ctx.quadraticCurveTo(x, y, x + radius, y);
-      ctx.closePath();
-      if (fill) ctx.fill();
-      if (stroke) ctx.stroke();
-    }
+🎯 *KEY SUPPORT & RESISTANCE LEVELS*
+• *Immediate Resistance (R1):* ${curr}${r1.toFixed(2)}
+• *Major Resistance (R2):* ${curr}${r2.toFixed(2)}
+• *Immediate Support (S1):* ${curr}${s1.toFixed(2)}
+• *Strong Support (S2):* ${curr}${s2.toFixed(2)}
 
-    // Card Container (White)
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = '#008080';
-    ctx.lineWidth = 1.5;
-    roundRect(cardX, cardY, cardWidth, cardH, cardRadius, true, true);
+━━━━━━━━━━━━━━━━━━━━━
+🤖 *AI PERSPECTIVE & TRADE PLAN*
+• *Signal:* *${trendSignal}*
+• *Suggested Entry Zone:* ${curr}${(cmp * 0.985).toFixed(2)} - ${curr}${cmp.toFixed(2)}
+• *Target 1 (Short-Term):* ${curr}${shortTermTarget} (+5%)
+• *Target 2 (Swing/Medium):* ${curr}${mediumTermTarget} (+12%)
+• *Strict Stop-Loss:* ${curr}${stopLoss} (-5%)
 
-    // Top Teal Banner
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(cardX + cardRadius, cardY);
-    ctx.lineTo(cardX + cardWidth - cardRadius, cardY);
-    ctx.quadraticCurveTo(cardX + cardWidth, cardY, cardX + cardWidth, cardY + cardRadius);
-    ctx.lineTo(cardX + cardWidth, cardY + headerHeight);
-    ctx.lineTo(cardX, cardY + headerHeight);
-    ctx.lineTo(cardX, cardY + cardRadius);
-    ctx.quadraticCurveTo(cardX, cardY, cardX + cardRadius, cardY);
-    ctx.closePath();
-    ctx.fillStyle = '#008080';
-    ctx.fill();
-    ctx.restore();
+💡 *Tip:* Stock Market me trade karne se pehle apna risk management aur stop-loss zaroor lagayein.`;
 
-    // Universal font stack with fallbacks for Windows, Linux, Docker
-    const fontPrimary = '"Segoe UI", "DejaVu Sans", "Noto Sans", Arial, sans-serif';
-    const fontDevanagari = '"Nirmala UI", "Noto Sans Devanagari", "DejaVu Sans", "Segoe UI", Arial, sans-serif';
-
-    // Header Content
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `bold 15px ${fontPrimary}`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(`BILL REPORT | ${dateStr}`, cardX + 16, cardY + (headerHeight / 2));
-
-    const sendBadgeW = 56;
-    const sendBadgeH = 24;
-    const sendBadgeX = cardX + cardWidth - 16 - sendBadgeW;
-    const sendBadgeY = cardY + ((headerHeight - sendBadgeH) / 2);
-
-    ctx.fillStyle = '#059669';
-    roundRect(sendBadgeX, sendBadgeY, sendBadgeW, sendBadgeH, 4, true, false);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `bold 11px ${fontPrimary}`;
-    ctx.textAlign = 'center';
-    ctx.fillText('SEND', sendBadgeX + (sendBadgeW / 2), sendBadgeY + (sendBadgeH / 2) + 1);
-
-    // Table Content
-    const tableX = cardX + padding;
-    const tableY = cardY + headerHeight + tableMarginTop;
-
-    let curX = tableX;
-    ctx.fillStyle = '#008080';
-    ctx.strokeStyle = '#cbd5e1';
-    ctx.lineWidth = 1;
-
-    cols.forEach((col) => {
-      ctx.fillStyle = '#008080';
-      ctx.fillRect(curX, tableY, col.width, tableHeaderHeight);
-      ctx.strokeRect(curX, tableY, col.width, tableHeaderHeight);
-
-      ctx.fillStyle = '#ffffff';
-      ctx.font = `bold 12px ${fontPrimary}`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(col.label, curX + (col.width / 2), tableY + (tableHeaderHeight / 2));
-      curX += col.width;
-    });
-
-    let curRowY = tableY + tableHeaderHeight;
-    rows.forEach((r) => {
-      curX = tableX;
-      cols.forEach((col, cIdx) => {
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(curX, curRowY, col.width, rowHeight);
-        ctx.strokeRect(curX, curRowY, col.width, rowHeight);
-
-        ctx.textBaseline = 'middle';
-        ctx.textAlign = 'center';
-
-        let cellVal = '';
-        let isBold = false;
-        let fontColor = '#000000';
-
-        if (cIdx === 0) { cellVal = String(r.sr); }
-        else if (cIdx === 1) { cellVal = r.shift; isBold = true; }
-        else if (cIdx === 2) { cellVal = r.rate; }
-        else if (cIdx === 3) { cellVal = String(r.tSale); isBold = true; }
-        else if (cIdx === 4) { cellVal = String(r.oDara); }
-        else if (cIdx === 5) { cellVal = String(r.oAkhar); }
-        else if (cIdx === 6) { cellVal = String(r.debit); fontColor = '#dc2626'; isBold = r.debit > 0; }
-        else if (cIdx === 7) { cellVal = String(r.comm); isBold = true; }
-        else if (cIdx === 8) { cellVal = String(r.credit); fontColor = r.credit >= 0 ? '#16a34a' : '#dc2626'; isBold = true; }
-
-        ctx.fillStyle = fontColor;
-        ctx.font = isBold ? `bold 12px ${fontPrimary}` : `12px ${fontPrimary}`;
-        ctx.fillText(cellVal, curX + (col.width / 2), curRowY + (rowHeight / 2));
-
-        curX += col.width;
-      });
-      curRowY += rowHeight;
-    });
-
-    // TOTAL Row
-    curX = tableX;
-    const mergedColWidth = cols[0].width + cols[1].width + cols[2].width;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(curX, curRowY, mergedColWidth, totalRowHeight);
-    ctx.strokeRect(curX, curRowY, mergedColWidth, totalRowHeight);
-
-    ctx.fillStyle = '#000000';
-    ctx.font = `bold 12px ${fontPrimary}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('TOTAL', curX + (mergedColWidth / 2), curRowY + (totalRowHeight / 2));
-
-    curX += mergedColWidth;
-
-    const totalCols = [
-      { val: String(data.grandTSale || 0), color: '#000000', bold: true },
-      { val: String(data.grandODara || 0), color: '#000000', bold: false },
-      { val: String(data.grandOAkhar || 0), color: '#000000', bold: false },
-      { val: String(data.grandDebit || 0), color: '#dc2626', bold: (data.grandDebit || 0) > 0 },
-      { val: String(data.grandComm || 0), color: '#000000', bold: true },
-      { val: String(data.grandNetBalance || 0), color: (data.grandNetBalance || 0) >= 0 ? '#16a34a' : '#dc2626', bold: true }
-    ];
-
-    totalCols.forEach((tCol, idx) => {
-      const colObj = cols[3 + idx];
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(curX, curRowY, colObj.width, totalRowHeight);
-      ctx.strokeRect(curX, curRowY, colObj.width, totalRowHeight);
-
-      ctx.fillStyle = tCol.color;
-      ctx.font = tCol.bold ? `bold 12px ${fontPrimary}` : `12px ${fontPrimary}`;
-      ctx.textAlign = 'center';
-      ctx.fillText(tCol.val, curX + (colObj.width / 2), curRowY + (totalRowHeight / 2));
-      curX += colObj.width;
-    });
-
-    curRowY += totalRowHeight;
-
-    // Footer 3-cell Row
-    const part1Width = cols[0].width + cols[1].width + cols[2].width + cols[3].width;
-    const part2Width = cols[4].width;
-    const part3Width = cols[5].width + cols[6].width + cols[7].width + cols[8].width;
-
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(tableX, curRowY, part1Width, footerRowHeight);
-    ctx.strokeRect(tableX, curRowY, part1Width, footerRowHeight);
-
-    ctx.fillStyle = '#000000';
-    ctx.font = `bold 13px ${fontDevanagari}`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('पिछला बकाया (Prev): ₹0', tableX + 10, curRowY + (footerRowHeight / 2));
-
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(tableX + part1Width, curRowY, part2Width, footerRowHeight);
-    ctx.strokeRect(tableX + part1Width, curRowY, part2Width, footerRowHeight);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(tableX + part1Width + part2Width, curRowY, part3Width, footerRowHeight);
-    ctx.strokeRect(tableX + part1Width + part2Width, curRowY, part3Width, footerRowHeight);
-
-    const netBal = data.grandNetBalance || 0;
-    ctx.fillStyle = '#000000';
-    ctx.font = `bold 13px ${fontDevanagari}`;
-    ctx.textAlign = 'right';
-    ctx.fillText(`कुल बकाया (Running Total): ₹${netBal < 0 ? '-' : ''}${Math.abs(netBal).toLocaleString('en-IN')}`, tableX + tableWidth - 10, curRowY + (footerRowHeight / 2));
-
-    return canvas.toBuffer('image/png');
+    return {
+      symbol,
+      companyName,
+      cmp,
+      change,
+      changePct,
+      report,
+      rawMeta: meta,
+    };
   } catch (err) {
-    console.error('Error generating exact bill image:', err);
+    console.error('Error fetching stock analysis:', err.message);
     return null;
   }
 }
 
+// Extract potential stock name or ticker from message
+function extractStockQuery(text) {
+  if (!text || typeof text !== 'string') return null;
+  const clean = text.trim();
+
+  // Remove common filler words
+  const words = clean.split(/\s+/);
+  if (words.length === 1 && clean.length >= 2 && clean.length <= 15) {
+    return clean;
+  }
+
+  // Check if query mentions known stock aliases
+  const upper = clean.toUpperCase();
+  for (const alias of Object.keys(POPULAR_STOCKS)) {
+    const rx = new RegExp(`\\b${alias.replace(/[\^\.\=]/g, '')}\\b`, 'i');
+    if (rx.test(upper)) {
+      return alias;
+    }
+  }
+
+  // Check phrases like "analysis of RELIANCE", "TCS share price", "Tata motors buy karein"
+  const patterns = [
+    /(?:share|stock|price|target|analysis|view|report|buy|sell|cmp|future|chart|news)\s+(?:of|for|on|in)?\s*([A-Za-z0-9\.\-\&]+)/i,
+    /([A-Za-z0-9\.\-\&]+)\s+(?:ka|ki|ke|share|stock|price|target|analysis|report|kaisa|buy|sell|future)/i,
+  ];
+
+  for (const p of patterns) {
+    const m = clean.match(p);
+    if (m && m[1] && m[1].length >= 2 && m[1].length <= 15) {
+      const candidate = m[1].trim();
+      const ignoreWords = ['kya', 'kaun', 'aaj', 'kal', 'best', 'good', 'top', 'penny', 'option', 'call', 'put', 'live', 'hai'];
+      if (!ignoreWords.includes(candidate.toLowerCase())) {
+        return candidate;
+      }
+    }
+  }
+
+  return null;
+}
+
+// AI Financial Conversational Brain (Gemini / OpenAI / Built-in Smart Fallback)
+async function generateAIAnswer(prompt) {
+  // 1. If Gemini API key is configured
+  if (appConfig.geminiApiKey) {
+    try {
+      const gUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${appConfig.geminiApiKey}`;
+      const res = await fetch(gUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  text: `You are an expert Indian Stock Market and Global Financial Research AI Assistant on WhatsApp. Answer the user's question clearly, professionally, and concisely in Hindi/Hinglish (or English if asked in English). Use bullet points, emojis, bold text, and crisp formatting suitable for WhatsApp. Never give reckless financial advice, always provide balanced analysis with risks. Question: ${prompt}`,
+                },
+              ],
+            },
+          ],
+        }),
+      });
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) return text.trim();
+    } catch (e) {
+      console.error('Gemini API error:', e.message);
+    }
+  }
+
+  // 2. If OpenAI API key is configured
+  if (appConfig.openaiApiKey) {
+    try {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${appConfig.openaiApiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert Stock Market AI Assistant on WhatsApp. Provide concise, high-value financial research in Hinglish/English with WhatsApp bullet formatting.',
+            },
+            { role: 'user', content: prompt },
+          ],
+        }),
+      });
+      const data = await res.json();
+      const text = data?.choices?.[0]?.message?.content;
+      if (text) return text.trim();
+    } catch (e) {
+      console.error('OpenAI API error:', e.message);
+    }
+  }
+
+  // 3. Built-in Smart Financial Guidance Fallback
+  return `🤖 *AI FINANCIAL RESEARCH ASSISTANT*
+━━━━━━━━━━━━━━━━━━━━━
+Aapke sawal: *"${prompt}"*
+
+💡 *Market & Investment Guidelines:*
+1. **Stock Research:** Kisi bhi specific stock ka live data & technical report dekhne ke liye seedha uska naam bhejein (jaise: \`RELIANCE\`, \`TATAMOTORS\`, \`SUZLON\`, \`TCS\`, \`NIFTY\`).
+2. **Diversification:** Apne portfolio ko 10-15 alag-alag strong sectors me divide karein.
+3. **Risk Management:** Short-term trades me hamesha 3% se 5% ka strict Stop-Loss follow karein.
+4. **Long Term Compounding:** Quality large-cap & fundamentally sound mid-cap stocks me SIP/Dips par accumulate karna long-term wealth banata hai.
+
+📌 *Try asking:*
+• \`TATA MOTORS analysis\`
+• \`SUZLON price target\`
+• \`NIFTY 50\`
+• \`RELIANCE\``;
+}
+
+// Help Menu Message
+function getHelpMenu() {
+  return `👋 *Namaste! Main hoon aapka AI Stock Research Assistant* 📈
+
+Aap mujhse kisi bhi Stock ki **Live Price, Technical Indicators (RSI, 50/200 SMA), Support & Resistance** aur **Target Plan** pooch sakte hain!
+
+━━━━━━━━━━━━━━━━━━━━━
+🔍 *Kaise Search Karein:*
+• Type karein stock ka naam: \`RELIANCE\`, \`TATAMOTORS\`, \`SUZLON\`
+• Ya sawal poochein: \`Tata Motors target\`, \`HDFC Bank analysis\`
+• Major Indices: \`NIFTY\`, \`BANKNIFTY\`, \`SENSEX\`, \`GOLD\`, \`BTC\`
+• Financial Questions: \`PE ratio kya hota hai?\`, \`Best dividend strategy\`
+
+💡 *Abhi kisi bhi stock ka naam type karke bhejiye!*`;
+}
+
+// ==================== BAILEYS WHATSAPP BOT ====================
 let sock = null;
 
-// ==================== BAILEYS BOT CORE ====================
 async function startWhatsAppBot() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
 
-  console.log(`\n🚀 Initializing WhatsApp Socket (Baileys v${version.join('.')})...`);
+  console.log(`\n🚀 Initializing WhatsApp AI Stock Research Assistant (Baileys v${version.join('.')})...`);
   botState.status = 'connecting';
 
   sock = makeWASocket({
@@ -1036,15 +530,8 @@ async function startWhatsAppBot() {
       const userJid = sock.user.id;
       const userPhone = userJid.split(':')[0].replace(/\D/g, '');
       botState.connectedNumber = `+${userPhone}`;
-      console.log(`\n✅ WhatsApp Connected Successfully as +${userPhone}!`);
-      console.log(`🎯 Messages will be forwarded to +${TARGET_PHONE_RAW}\n`);
+      console.log(`\n✅ WhatsApp AI Stock Assistant Connected Successfully as +${userPhone}!\n`);
       addLog('success', `WhatsApp Connected as +${userPhone}`);
-
-      // Try joining result group
-      try {
-        await sock.groupAcceptInvite(GROUP_INVITE_CODE);
-        console.log(`✅ Successfully joined Result WhatsApp Group (${GROUP_INVITE_CODE})!`);
-      } catch {}
     }
   });
 
@@ -1076,206 +563,58 @@ async function startWhatsAppBot() {
 
         if (!text) continue;
 
-        // Clean sender phone number (strip device suffixes e.g. :12@s.whatsapp.net)
         const cleanJid = (remoteJid || '').split('@')[0].split(':')[0];
         const senderPhone = cleanJid.replace(/\D/g, '');
         const msgId = msg.key.id;
 
         if (isDuplicate(msgId, text, remoteJid)) continue;
 
-        botState.totalMessagesProcessed++;
-        const todayDate = formatDateDDMMYYYY();
-        const todayResults = getTodayResults(todayDate);
-        const timeString = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
-
-        // 1. Group / Direct Result Detection
-        const detectedResults = parseResultMessage(text);
-        if (detectedResults.length > 0) {
-          let updatedList = [];
-          for (const r of detectedResults) {
-            setResultForShift(todayDate, r.category, r.number);
-            updatedList.push(`${SHIFT_NAMES[r.category]} = ${r.number}`);
-            console.log(`🎯 [RESULT CAPTURED] ${SHIFT_NAMES[r.category]} (${r.category.toUpperCase()}) -> ${r.number} for Date: ${todayDate}`);
-          }
-          addLog('result', `Result Captured: ${updatedList.join(', ')}`);
-          if (isGroup) return;
-        }
-
-        if (isGroup) continue;
-        if (remoteJid.includes(TARGET_PHONE_RAW)) continue;
-
-        // Monitored Sender Check (If empty, ALL numbers are allowed for testing)
-        if (MONITORED_SENDERS.length > 0) {
-          const isAllowedSender = MONITORED_SENDERS.some(num => senderPhone.endsWith(num) || senderPhone.includes(num));
-          if (!isAllowedSender) {
-            console.log(`🔇 [SILENT IGNORE] Message from unmonitored number +${senderPhone} -> No reply & No forward.`);
-            continue;
-          }
-        }
-
-        // 2. Passing Calculation
-        let calc = null;
-        try {
-          calc = calculatePassingReport(text, todayResults, '90/10');
-        } catch (eCalc) {
-          console.error('Passing report calc error:', eCalc.message);
-        }
-
-        // 3. Shift Timing & Format Validation (FB: 3pm-5:50pm, GB: 6:30pm-9:50pm, ND: 10pm-11:30pm, PD: 11pm-3am)
-        const timeCheck = checkMessageTimeValidity(text, calc);
-        const { timeFormatted } = getKolkataTime();
-
+        botState.totalQueriesProcessed++;
         console.log(`\n========================================`);
-        console.log(`📩 Message from +${senderPhone}: "${text}"`);
+        console.log(`📩 Stock Query from +${senderPhone}: "${text}"`);
+        addLog('query', `From +${senderPhone}: "${text}"`);
 
-        // Case A: FUTURE Shift -> Send "Abhi time nahi hua hai <shift> ka" & HOLD Message in queue!
-        if (timeCheck.shouldHold) {
-          console.log(`⏳ [HOLD QUEUE] Message from +${senderPhone} saved for ${timeCheck.targetShift.toUpperCase()}.`);
-          console.log(`ℹ️ Reason: ${timeCheck.reason} -> Replying "${timeCheck.replyText}" and holding for shift start.`);
-          
-          if (timeCheck.shouldReply && timeCheck.replyText) {
-            try {
-              await sock.sendMessage(remoteJid, { text: timeCheck.replyText });
-              console.log(`🤖 Auto "${timeCheck.replyText}" replied to +${senderPhone}`);
-              addLog('reply', `Auto '${timeCheck.replyText}' -> +${senderPhone}`);
-            } catch (e) {
-              console.error('Error sending hold notice reply:', e.message);
-            }
-          }
+        const lower = text.toLowerCase();
 
-          heldMessages.push({
-            id: msgId || `${senderPhone}_${Date.now()}`,
-            remoteJid: remoteJid,
-            senderPhone: senderPhone,
-            text: text,
-            targetShift: timeCheck.targetShift,
-            receivedAtIST: timeFormatted,
-            receivedTimestamp: Date.now()
-          });
-          saveHeldMessages();
-
-          addLog('hold', `Held msg "${text}" from +${senderPhone} for ${timeCheck.targetShift.toUpperCase()}`);
+        // 1. Welcome / Help Greetings
+        if (['hi', 'hello', 'hey', 'help', 'menu', 'start', 'namaste', 'kaise ho', 'guide'].includes(lower)) {
+          const helpMsg = getHelpMenu();
+          await sock.sendMessage(remoteJid, { text: helpMsg });
+          console.log(`🤖 Sent Help Menu to +${senderPhone}`);
+          addLog('reply', `Sent Help Menu -> +${senderPhone}`);
           console.log(`========================================`);
           continue;
         }
 
-        // Case B: EXPIRED or INVALID -> Reply "Not ok" and STOP!
-        if (!timeCheck.valid) {
-          console.log(`⏱️ [NOT OK] Message from +${senderPhone} at ${timeFormatted} IST: "${text}"`);
-          console.log(`❌ Reason: ${timeCheck.reason} -> Replying "${timeCheck.replyText || 'Not ok'}" and STOPPING forward.`);
-          
-          try {
-            await sock.sendMessage(remoteJid, { text: timeCheck.replyText || 'Not ok' });
-            console.log(`🤖 Auto "${timeCheck.replyText || 'Not ok'}" replied to +${senderPhone}`);
-            addLog('reply', `Auto '${timeCheck.replyText || 'Not ok'}' -> +${senderPhone} (${timeCheck.reason})`);
-          } catch (e) {
-            console.error('Error sending Not ok reply:', e.message);
-          }
+        // 2. Try Extracting Stock Symbol for Realtime Analysis
+        const stockQuery = extractStockQuery(text);
+        let stockResult = null;
 
-          console.log(`🚫 Forward blocked (Invalid format or Shift closed).`);
-          console.log(`========================================`);
-          continue;
+        if (stockQuery) {
+          console.log(`🔍 Detected Stock Ticker / Name: "${stockQuery}"... Fetching live research data...`);
+          stockResult = await fetchStockAnalysis(stockQuery);
         }
 
-        // Case C: OPEN Shift -> Reply "<shift> ok" to Sender & Forward!
-        const okReply = timeCheck.replyText || `${(timeCheck.targetShift || 'fb').toLowerCase()} ok`;
-        try {
-          await sock.sendMessage(remoteJid, { text: okReply });
-          console.log(`🤖 Auto "${okReply}" replied to +${senderPhone}`);
-          addLog('reply', `Auto '${okReply}' -> +${senderPhone}`);
-        } catch (e) {
-          console.error('Error sending Ok reply:', e.message);
+        if (stockResult && stockResult.report) {
+          await sock.sendMessage(remoteJid, { text: stockResult.report });
+          console.log(`📊 Sent AI Stock Research Report for ${stockResult.symbol} to +${senderPhone}`);
+          addLog('reply', `Report: ${stockResult.symbol} (CMP: ₹${stockResult.cmp}) -> +${senderPhone}`);
+        } else {
+          // 3. Fallback to AI Conversational Market Intelligence
+          console.log(`🤖 Generating AI Market Response for: "${text}"...`);
+          const aiResponse = await generateAIAnswer(text);
+          await sock.sendMessage(remoteJid, { text: aiResponse });
+          console.log(`🤖 Sent AI Market Intelligence Response to +${senderPhone}`);
+          addLog('reply', `AI Answer -> +${senderPhone}`);
         }
 
-        // Forward strictly PURE RAW MESSAGE to TARGET (8905381255) - No bill photo, no totals
-        await processAndForwardBet(text, senderPhone, todayDate, todayResults);
         console.log(`========================================`);
       } catch (err) {
-        console.error('⚠️ Error processing incoming message:', err.message);
+        console.error('⚠️ Error processing stock research message:', err.message);
         addLog('error', `Process error: ${err.message}`);
       }
     }
   });
-
-  // Background Checker for Held / Queued Messages (Runs every 15 seconds)
-  setInterval(async () => {
-    if (!sock || botState.status !== 'connected' || heldMessages.length === 0) return;
-    
-    const { totalMinutes, timeFormatted } = getKolkataTime();
-    const curDate = formatDateDDMMYYYY();
-    const curResults = getTodayResults(curDate);
-    const remaining = [];
-
-    for (const item of heldMessages) {
-      const shiftKey = item.targetShift;
-      const status = getShiftStatus(shiftKey, totalMinutes);
-
-      if (status === 'OPEN') {
-        const okReply = `${shiftKey.toLowerCase()} ok`;
-        console.log(`\n🎉 [HOLD RELEASE] Shift ${shiftKey.toUpperCase()} is NOW OPEN at ${timeFormatted} IST! Processing held msg from +${item.senderPhone}...`);
-        
-        // 1. Send "<shift> ok" reply to sender
-        try {
-          await sock.sendMessage(item.remoteJid, { text: okReply });
-          console.log(`🤖 Auto '${okReply}' replied to +${item.senderPhone} for released ${shiftKey.toUpperCase()} bet.`);
-          addLog('reply', `Held released: Auto '${okReply}' -> +${item.senderPhone} (${shiftKey.toUpperCase()})`);
-        } catch (e) {
-          console.error('Error replying Ok to held msg sender:', e.message);
-        }
-
-        // 2. Pure forward raw text to Target (8905381255) - No totals
-        try {
-          await processAndForwardBet(item.text, item.senderPhone, curDate, curResults);
-        } catch (eFwd) {
-          console.error('Error forwarding released held msg:', eFwd.message);
-        }
-      } else if (status === 'EXPIRED') {
-        console.log(`⚠️ [HOLD EXPIRED] Shift ${shiftKey.toUpperCase()} expired for held message from +${item.senderPhone}.`);
-        try {
-          await sock.sendMessage(item.remoteJid, { text: 'Not ok' });
-          addLog('reply', `Held expired: Auto 'Not ok' -> +${item.senderPhone} (${shiftKey.toUpperCase()})`);
-        } catch {}
-      } else {
-        // Still in FUTURE window -> keep in hold queue!
-        remaining.push(item);
-      }
-    }
-
-    if (remaining.length !== heldMessages.length) {
-      heldMessages = remaining;
-      saveHeldMessages();
-    }
-  }, 15000);
-}
-
-// Helper to forward strictly pure raw message to target (NO photo bill, NO totals)
-async function processAndForwardBet(text, senderPhone, todayDate, todayResults) {
-  // Bet message raw text forward ONLY (bina kisi photo/total/name ke)
-  await forwardToTarget({ text: text });
-  console.log(`🚀 Forwarded Pure Message to ${TARGET_PHONE_RAW}: "${text}"`);
-  addLog('forward', `Forwarded "${text}" -> ${TARGET_PHONE_RAW}`);
-}
-
-// Robust Forward Helper with Self-Chat Support & Fallbacks
-async function forwardToTarget(payload) {
-  const target = '918005844014@s.whatsapp.net';
-  try {
-    console.log(`📤 Forwarding message to ${target}...`);
-    return await sock.sendMessage(target, payload);
-  } catch (err) {
-    console.error(`❌ Error forwarding to ${target}:`, err.message);
-    addLog('warn', `Forward try 1 failed (${err.message}), retrying self JID...`);
-    try {
-      if (sock.user && sock.user.id) {
-        const selfJid = sock.user.id.split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
-        console.log(`🔄 Retrying forward to self user JID: ${selfJid}...`);
-        return await sock.sendMessage(selfJid, payload);
-      }
-    } catch (e2) {
-      console.error(`❌ Retry forward failed:`, e2.message);
-      addLog('error', `Forward retry failed: ${e2.message}`);
-    }
-  }
 }
 
 // ==================== EXPRESS WEB DASHBOARD ====================
@@ -1293,35 +632,28 @@ app.get('/api/health', (req, res) => {
 });
 
 app.get('/api/status', (req, res) => {
-  const { hour, minute, totalMinutes, timeFormatted } = getKolkataTime();
-  const shifts = Object.keys(SHIFT_TIME_WINDOWS).map(k => ({
-    key: k,
-    name: SHIFT_TIME_WINDOWS[k].name,
-    display: SHIFT_TIME_WINDOWS[k].display,
-    status: getShiftStatus(k, totalMinutes),
-    isOpen: isShiftTimeOpen(k, totalMinutes)
-  }));
   res.json({
     ...botState,
-    kolkataTime: timeFormatted,
-    shifts,
-    heldCount: heldMessages.length,
-    heldMessages: heldMessages.slice(0, 10)
+    hasGeminiKey: !!appConfig.geminiApiKey,
+    hasOpenAiKey: !!appConfig.openaiApiKey,
+    hasGroqKey: !!appConfig.groqApiKey,
   });
 });
 
-app.get('/api/results', (req, res) => {
-  res.json(resultsMemory);
+app.post('/api/config', (req, res) => {
+  const { geminiApiKey, openaiApiKey, groqApiKey } = req.body;
+  if (geminiApiKey !== undefined) appConfig.geminiApiKey = geminiApiKey.trim();
+  if (openaiApiKey !== undefined) appConfig.openaiApiKey = openaiApiKey.trim();
+  if (groqApiKey !== undefined) appConfig.groqApiKey = groqApiKey.trim();
+  saveConfig();
+  res.json({ success: true, message: 'AI Configuration updated successfully!' });
 });
 
-app.post('/api/results', (req, res) => {
-  const { date, category, number } = req.body;
-  if (!category || number === undefined) {
-    return res.status(400).json({ error: 'category and number required' });
-  }
-  const d = date || formatDateDDMMYYYY();
-  setResultForShift(d, category, number);
-  res.json({ success: true, results: getTodayResults(d) });
+app.get('/api/stock', async (req, res) => {
+  const query = req.query.q || 'RELIANCE';
+  const data = await fetchStockAnalysis(query);
+  if (!data) return res.status(404).json({ error: 'Stock not found' });
+  res.json(data);
 });
 
 app.get('/', (req, res) => {
@@ -1331,81 +663,81 @@ app.get('/', (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TSC Pro Passing & Forwarder Dashboard</title>
+  <title>AI Stock Research Assistant - WhatsApp Bot Dashboard</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     body { background-color: #0b1329; color: #e2e8f0; font-family: 'Segoe UI', system-ui, sans-serif; }
     .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; }
     .badge-status { font-size: 0.9rem; padding: 6px 12px; }
-    .shift-badge-open { background: #059669; color: #fff; font-size: 0.75rem; padding: 3px 8px; border-radius: 6px; }
-    .shift-badge-future { background: #d97706; color: #fff; font-size: 0.75rem; padding: 3px 8px; border-radius: 6px; }
-    .shift-badge-closed { background: #dc2626; color: #fff; font-size: 0.75rem; padding: 3px 8px; border-radius: 6px; }
+    .stock-tag { background: #0f172a; border: 1px solid #38bdf8; color: #38bdf8; border-radius: 20px; padding: 4px 12px; font-size: 12px; cursor: pointer; display: inline-block; margin: 2px; }
+    .stock-tag:hover { background: #38bdf8; color: #0f172a; }
   </style>
 </head>
 <body class="p-4">
-  <div class="container" style="max-width: 900px;">
+  <div class="container" style="max-width: 950px;">
+    <!-- Top Header -->
     <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom border-secondary">
       <div>
-        <h3 class="fw-bold text-teal mb-0" style="color: #2dd4bf;"><i class="fa-solid fa-bolt me-2"></i>TSC Passing Bot Dashboard</h3>
-        <p class="text-secondary small mb-0">Live WhatsApp Forwarder & Result Passing Engine</p>
+        <h3 class="fw-bold mb-0" style="color: #38bdf8;"><i class="fa-solid fa-chart-line me-2"></i>AI Stock Research WhatsApp Bot</h3>
+        <p class="text-secondary small mb-0">Realtime Technical Analysis, Indicators & AI Market Intelligence</p>
       </div>
       <div class="text-end">
         <span id="statusBadge" class="badge bg-secondary badge-status">Connecting...</span>
-        <div id="kolkataClock" class="text-info small mt-1 fw-bold">IST: --:--</div>
+        <div class="text-success small mt-1 fw-bold"><i class="fa-solid fa-circle me-1" style="font-size: 8px;"></i>Live AI Engine</div>
       </div>
     </div>
     
+    <!-- Status Metrics -->
     <div class="row g-3 mb-4">
-      <div class="col-md-3">
+      <div class="col-md-4">
         <div class="card p-3">
-          <div class="text-secondary small">Connected As</div>
+          <div class="text-secondary small">Connected WhatsApp</div>
           <div id="connectedAs" class="fs-6 fw-bold text-light mt-1">Not Connected</div>
         </div>
       </div>
-      <div class="col-md-3">
+      <div class="col-md-4">
         <div class="card p-3">
-          <div class="text-secondary small">Messages Processed</div>
-          <div id="msgCount" class="fs-6 fw-bold text-success mt-1">0</div>
+          <div class="text-secondary small">Stock Queries Processed</div>
+          <div id="queryCount" class="fs-6 fw-bold text-success mt-1">0</div>
         </div>
       </div>
-      <div class="col-md-3">
+      <div class="col-md-4">
         <div class="card p-3">
-          <div class="text-secondary small">Held Queue (Future)</div>
-          <div id="heldCount" class="fs-6 fw-bold text-warning mt-1">0</div>
-        </div>
-      </div>
-      <div class="col-md-3">
-        <div class="card p-3">
-          <div class="text-secondary small">Forward Target</div>
-          <div class="fs-6 fw-bold text-info mt-1">+91 89053 81255</div>
+          <div class="text-secondary small">AI Engine Status</div>
+          <div id="aiEngineStatus" class="fs-6 fw-bold text-info mt-1">Realtime Smart Analytics</div>
         </div>
       </div>
     </div>
 
-    <!-- Shift Timings Window Card -->
+    <!-- Quick Stock Tickers -->
     <div class="card p-3 mb-4">
-      <h6 class="fw-bold text-warning mb-2"><i class="fa-solid fa-clock me-2"></i>Shift Timing Validation & Cutoffs (IST)</h6>
-      <div class="table-responsive">
-        <table class="table table-dark table-sm table-bordered mb-0 align-middle text-center" style="font-size: 13px;">
-          <thead>
-            <tr class="table-secondary text-dark">
-              <th>Shift</th>
-              <th>Valid Window</th>
-              <th>Advance Booking Rule</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody id="shiftTableBody">
-            <tr><td><b>FB (Faridabad)</b></td><td>3:00 PM - 5:50 PM</td><td>5:50 PM tak Ok+Forward | 5:51 PM pe Not ok</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
-            <tr><td><b>GB (Ghaziabad)</b></td><td>6:30 PM - 9:50 PM</td><td>FB ke time Hold | 6:30 PM pe Ok+Forward</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
-            <tr><td><b>ND (Gali)</b></td><td>10:00 PM - 11:30 PM</td><td>GB ke time Hold | 10:00 PM pe Ok+Forward</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
-            <tr><td><b>PD (Desawar)</b></td><td>11:00 PM - 3:00 AM</td><td>Din me Hold | 11:00 PM pe Ok+Forward</td><td><span class="badge bg-secondary">Checking...</span></td></tr>
-          </tbody>
-        </table>
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="fw-bold text-warning mb-0"><i class="fa-solid fa-bolt me-2"></i>Quick Stock Search & Live Test</h6>
+        <span class="text-secondary small">Click any stock to test</span>
       </div>
+      <div class="mb-3">
+        <span class="stock-tag" onclick="testStock('RELIANCE')">RELIANCE</span>
+        <span class="stock-tag" onclick="testStock('TATAMOTORS')">TATA MOTORS</span>
+        <span class="stock-tag" onclick="testStock('TCS')">TCS</span>
+        <span class="stock-tag" onclick="testStock('HDFCBANK')">HDFC BANK</span>
+        <span class="stock-tag" onclick="testStock('SUZLON')">SUZLON</span>
+        <span class="stock-tag" onclick="testStock('ZOMATO')">ZOMATO</span>
+        <span class="stock-tag" onclick="testStock('INFY')">INFOSYS</span>
+        <span class="stock-tag" onclick="testStock('ITC')">ITC</span>
+        <span class="stock-tag" onclick="testStock('NIFTY 50')">NIFTY 50</span>
+        <span class="stock-tag" onclick="testStock('BANKNIFTY')">BANK NIFTY</span>
+        <span class="stock-tag" onclick="testStock('AAPL')">APPLE</span>
+        <span class="stock-tag" onclick="testStock('BTC')">BITCOIN</span>
+      </div>
+      <div class="input-group">
+        <input type="text" id="testInput" class="form-control bg-dark text-light border-secondary" placeholder="Enter stock symbol (e.g. SBIN, TATASTEEL, MARUTI, AAPL)..." value="RELIANCE">
+        <button class="btn btn-info fw-bold" onclick="runTest()"><i class="fa-solid fa-magnifying-glass me-1"></i> Analyze Stock</button>
+      </div>
+      <div id="stockOutput" class="mt-3 p-3 bg-dark rounded border border-secondary" style="display:none; white-space: pre-wrap; font-family: monospace; font-size: 13px; max-height: 260px; overflow-y: auto;"></div>
     </div>
 
+    <!-- WhatsApp QR Code (when disconnected) -->
     <div class="card p-3 mb-4" id="qrContainer" style="display:none;">
       <h5 class="fw-bold text-warning text-center mb-3">📱 WhatsApp QR Code (Scan to Connect)</h5>
       <div class="text-center">
@@ -1413,10 +745,11 @@ app.get('/', (req, res) => {
       </div>
     </div>
 
+    <!-- Live Activity Logs -->
     <div class="card p-3">
       <h5 class="fw-bold text-light mb-3"><i class="fa-solid fa-clock-rotate-left me-2"></i>Live Activity Logs</h5>
-      <div id="logsContainer" style="max-height: 280px; overflow-y: auto; font-family: monospace; font-size: 13px;">
-        <div class="text-muted">Listening for messages...</div>
+      <div id="logsContainer" style="max-height: 250px; overflow-y: auto; font-family: monospace; font-size: 13px;">
+        <div class="text-muted">Listening for incoming stock queries...</div>
       </div>
     </div>
   </div>
@@ -1440,33 +773,7 @@ app.get('/', (req, res) => {
             document.getElementById('qrContainer').style.display = 'block';
           }
         }
-        document.getElementById('msgCount').innerText = data.totalMessagesProcessed || 0;
-        document.getElementById('heldCount').innerText = data.heldCount || 0;
-        if (data.kolkataTime) {
-          document.getElementById('kolkataClock').innerText = 'IST: ' + data.kolkataTime;
-        }
-
-        if (data.shifts && data.shifts.length > 0) {
-          const rowsHtml = data.shifts.map(function(s) {
-            let statusHtml = '';
-            if (s.status === 'OPEN') {
-              statusHtml = '<span class="shift-badge-open"><i class="fa-solid fa-check me-1"></i>OPEN (Ok)</span>';
-            } else if (s.status === 'FUTURE') {
-              statusHtml = '<span class="shift-badge-future"><i class="fa-solid fa-hourglass-start me-1"></i>FUTURE (Hold)</span>';
-            } else {
-              statusHtml = '<span class="shift-badge-closed"><i class="fa-solid fa-ban me-1"></i>CLOSED (Not ok)</span>';
-            }
-            let ruleText = '';
-            if (s.key === 'fb') ruleText = '5:50 PM tak Ok+Forward | 5:51 PM pe Not ok';
-            else if (s.key === 'gb') ruleText = 'FB ke time Hold | 6:30 PM pe Ok+Forward';
-            else if (s.key === 'nd') ruleText = 'GB ke time Hold | 10:00 PM pe Ok+Forward';
-            else if (s.key === 'pd') ruleText = 'Din me Hold | 11:00 PM pe Ok+Forward';
-            else ruleText = s.display + ' tak Ok+Forward';
-
-            return '<tr><td><b>' + s.name + ' (' + s.key.toUpperCase() + ')</b></td><td>' + s.display + '</td><td>' + ruleText + '</td><td>' + statusHtml + '</td></tr>';
-          }).join('');
-          document.getElementById('shiftTableBody').innerHTML = rowsHtml;
-        }
+        document.getElementById('queryCount').innerText = data.totalQueriesProcessed || 0;
         
         if (data.recentLogs && data.recentLogs.length > 0) {
           document.getElementById('logsContainer').innerHTML = data.recentLogs.map(function(l) {
@@ -1475,7 +782,32 @@ app.get('/', (req, res) => {
         }
       } catch {}
     }
-    setInterval(updateStatus, 2500);
+    
+    async function testStock(sym) {
+      document.getElementById('testInput').value = sym;
+      runTest();
+    }
+
+    async function runTest() {
+      const q = document.getElementById('testInput').value.trim();
+      if (!q) return;
+      const out = document.getElementById('stockOutput');
+      out.style.display = 'block';
+      out.innerText = '🔍 Fetching live AI technical & fundamental report for ' + q + '...';
+      try {
+        const res = await fetch('/api/stock?q=' + encodeURIComponent(q));
+        const data = await res.json();
+        if (data.report) {
+          out.innerText = data.report;
+        } else {
+          out.innerText = '❌ Stock not found or data unavailable for ' + q;
+        }
+      } catch (e) {
+        out.innerText = '⚠️ Error: ' + e.message;
+      }
+    }
+
+    setInterval(updateStatus, 3000);
     updateStatus();
   </script>
 </body>
@@ -1484,10 +816,10 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`
-======================================================`);
-  console.log(`🌐 Web Dashboard: http://localhost:${PORT}`);
-  console.log(`🎯 Target Phone:  +91 ${TARGET_PHONE_RAW}`);
-  console.log(`======================================================
+======================================================
+🌐 AI Stock Research Dashboard: http://localhost:${PORT}
+📈 Realtime Stock Analytics & AI WhatsApp Assistant Live!
+======================================================
 `);
   startWhatsAppBot();
 });
