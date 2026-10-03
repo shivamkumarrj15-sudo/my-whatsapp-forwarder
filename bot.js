@@ -3,7 +3,8 @@
  * - Real-time Stock Market Quotes & Data (NSE, BSE, US Markets, Crypto, Commodities)
  * - Automated Technical Analysis: RSI (14), 50-day & 200-day Moving Averages
  * - Support & Resistance Levels, Trade Plan (Entry, Targets, Stop-loss)
- * - AI Powered Financial Analysis & Conversational Market Intelligence (Gemini / OpenAI / Groq / Built-in)
+ * - AI Powered Financial Analysis & Conversational Market Intelligence
+ *   (OpenRouter AI [DeepSeek / Llama / Claude / Gemini] + Google Gemini + OpenAI + Groq + Built-in)
  * - Zero betting/lottery code, pure 100% Stock Market & Investment AI
  */
 
@@ -27,6 +28,8 @@ const CONFIG_FILE = path.join(__dirname, 'ai_stock_config.json');
 
 // Memory Persistence for AI settings
 let appConfig = {
+  openrouterApiKey: process.env.OPENROUTER_API_KEY || '',
+  openrouterModel: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-chat',
   geminiApiKey: process.env.GEMINI_API_KEY || '',
   openaiApiKey: process.env.OPENAI_API_KEY || '',
   groqApiKey: process.env.GROQ_API_KEY || '',
@@ -415,7 +418,7 @@ function extractStockQuery(text) {
   return null;
 }
 
-// AI Financial Conversational Brain (Gemini / OpenAI / Groq / Built-in Smart Fallback)
+// AI Financial Conversational Brain (OpenRouter AI / Gemini / OpenAI / Groq / Fallback)
 async function generateAIAnswer(prompt, stockData = null) {
   let contextPrompt = `User Question / Topic: "${prompt}"`;
   if (stockData && stockData.rawMeta) {
@@ -434,7 +437,47 @@ Please formulate an expert, well-structured financial research response in Hindi
     contextPrompt += `\n\nPlease answer as an expert Indian & Global Stock Market Research AI Assistant. Format the reply cleanly for WhatsApp with emojis, bullet points, and practical financial guidance in Hindi/Hinglish (or English).`;
   }
 
-  // 1. Google Gemini API (Free, fast & powerful)
+  // 1. OpenRouter AI (DeepSeek / Llama / Claude / Gemini / Auto)
+  if (appConfig.openrouterApiKey) {
+    const openrouterModels = [
+      appConfig.openrouterModel || 'deepseek/deepseek-chat',
+      'deepseek/deepseek-r1',
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'google/gemini-2.0-flash-exp:free',
+      'openai/gpt-4o-mini',
+    ];
+
+    for (const model of openrouterModels) {
+      try {
+        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${appConfig.openrouterApiKey}`,
+            'HTTP-Referer': 'https://my-whatsapp-forwarder.onrender.com',
+            'X-Title': 'WhatsApp AI Stock Research Assistant',
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: [
+              {
+                role: 'system',
+                content: 'You are an elite Stock Market & Financial Research AI Assistant on WhatsApp. Provide insightful, structured research in Hinglish/English with WhatsApp bullet formatting and emojis.',
+              },
+              { role: 'user', content: contextPrompt },
+            ],
+          }),
+        });
+        const data = await res.json();
+        const text = data?.choices?.[0]?.message?.content;
+        if (text && text.trim().length > 0) return text.trim();
+      } catch (e) {
+        console.error(`OpenRouter (${model}) error:`, e.message);
+      }
+    }
+  }
+
+  // 2. Google Gemini API (Free & Fast)
   if (appConfig.geminiApiKey) {
     const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
     for (const model of geminiModels) {
@@ -461,7 +504,7 @@ Please formulate an expert, well-structured financial research response in Hindi
     }
   }
 
-  // 2. Groq API (Free & Fast Llama-3.3)
+  // 3. Groq API (Free & Fast Llama-3.3)
   if (appConfig.groqApiKey) {
     try {
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -489,7 +532,7 @@ Please formulate an expert, well-structured financial research response in Hindi
     }
   }
 
-  // 3. OpenAI API
+  // 4. OpenAI API
   if (appConfig.openaiApiKey) {
     try {
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -517,7 +560,7 @@ Please formulate an expert, well-structured financial research response in Hindi
     }
   }
 
-  // 4. Built-in Smart Financial Guidance Fallback
+  // 5. Built-in Smart Financial Guidance Fallback
   if (stockData && stockData.report) {
     return `${stockData.report}\n\n🤖 *AI Research Note:* Technical signal: *${stockData.trend || 'Consolidation'}*. Follow proper risk management and stop-loss.`;
   }
@@ -532,7 +575,7 @@ Aapke sawal: *"${prompt}"*
 3. **Risk Management:** Swing trading me 3% se 5% ka strict Stop-Loss zaroor follow karein.
 4. **Diversification:** Apne portfolio ko leading blue-chip aur growth stocks me diversify karein.
 
-✨ *Tip:* Deep AI Answers aur detailed Q&A ke liye Dashboard par apna Free Gemini API Key link karein!`;
+✨ *Tip:* Deep AI Answers aur detailed Q&A ke liye Dashboard par apna OpenRouter ya Gemini API Key link karein!`;
 }
 
 // Help Menu Message
@@ -674,19 +717,15 @@ async function startWhatsAppBot() {
         }
 
         const words = text.split(/\s+/);
+        const hasLLMKey = !!(appConfig.openrouterApiKey || appConfig.geminiApiKey || appConfig.openaiApiKey || appConfig.groqApiKey);
         const isSimpleTicker = words.length <= 2 && stockResult && stockResult.report;
 
         // 3. Response Generation
-        if (isSimpleTicker && !appConfig.geminiApiKey && !appConfig.openaiApiKey && !appConfig.groqApiKey) {
-          // If pure ticker query and no LLM key, send instant technical analysis report
+        if (isSimpleTicker) {
+          // Send crisp real-time technical analysis report
           await sock.sendMessage(remoteJid, { text: stockResult.report });
           console.log(`📊 Sent Technical Report for ${stockResult.symbol} to +${senderPhone}`);
           addLog('reply', `Report: ${stockResult.symbol} (CMP: ₹${stockResult.cmp}) -> +${senderPhone}`);
-        } else if (isSimpleTicker && (appConfig.geminiApiKey || appConfig.openaiApiKey || appConfig.groqApiKey)) {
-          // Pure ticker with AI enabled -> Send technical report directly
-          await sock.sendMessage(remoteJid, { text: stockResult.report });
-          console.log(`📊 Sent AI Technical Report for ${stockResult.symbol} to +${senderPhone}`);
-          addLog('reply', `Report: ${stockResult.symbol} -> +${senderPhone}`);
         } else {
           // Conversational question / financial Q&A / stock research question
           console.log(`🤖 Formulating AI Market Intelligence for: "${text}"...`);
@@ -722,6 +761,8 @@ app.get('/api/health', (req, res) => {
 app.get('/api/status', (req, res) => {
   res.json({
     ...botState,
+    hasOpenrouterKey: !!appConfig.openrouterApiKey,
+    openrouterModel: appConfig.openrouterModel || 'deepseek/deepseek-chat',
     hasGeminiKey: !!appConfig.geminiApiKey,
     hasOpenAiKey: !!appConfig.openaiApiKey,
     hasGroqKey: !!appConfig.groqApiKey,
@@ -729,7 +770,9 @@ app.get('/api/status', (req, res) => {
 });
 
 app.post('/api/config', (req, res) => {
-  const { geminiApiKey, openaiApiKey, groqApiKey } = req.body;
+  const { openrouterApiKey, openrouterModel, geminiApiKey, openaiApiKey, groqApiKey } = req.body;
+  if (openrouterApiKey !== undefined) appConfig.openrouterApiKey = openrouterApiKey.trim();
+  if (openrouterModel !== undefined) appConfig.openrouterModel = openrouterModel.trim();
   if (geminiApiKey !== undefined) appConfig.geminiApiKey = geminiApiKey.trim();
   if (openaiApiKey !== undefined) appConfig.openaiApiKey = openaiApiKey.trim();
   if (groqApiKey !== undefined) appConfig.groqApiKey = groqApiKey.trim();
@@ -780,7 +823,7 @@ app.get('/', (req, res) => {
     <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom border-secondary">
       <div>
         <h3 class="fw-bold mb-0" style="color: #38bdf8;"><i class="fa-solid fa-chart-line me-2"></i>AI Stock Research WhatsApp Bot</h3>
-        <p class="text-secondary small mb-0">Realtime Technical Indicators, RSI, Moving Averages & AI Financial Q&A</p>
+        <p class="text-secondary small mb-0">OpenRouter AI (DeepSeek / Llama) & Real-Time Technical Market Intelligence</p>
       </div>
       <div class="text-end">
         <span id="statusBadge" class="badge bg-secondary badge-status">Connecting...</span>
@@ -810,27 +853,56 @@ app.get('/', (req, res) => {
       </div>
     </div>
 
-    <!-- AI API Key Settings -->
-    <div class="card p-3 mb-4 border-info">
+    <!-- OpenRouter AI Settings -->
+    <div class="card p-3 mb-4 border-primary">
       <div class="d-flex justify-content-between align-items-center mb-2">
-        <h6 class="fw-bold text-info mb-0"><i class="fa-solid fa-robot me-2"></i>Connect Free Google Gemini AI Key</h6>
-        <a href="https://aistudio.google.com/app/apikey" target="_blank" class="btn btn-sm btn-outline-info fw-bold">
-          <i class="fa-solid fa-key me-1"></i> Get Free Gemini API Key (1-Click)
+        <h6 class="fw-bold text-primary mb-0"><i class="fa-solid fa-network-wired me-2"></i>Connect OpenRouter AI (DeepSeek / Llama / Gemini / Claude)</h6>
+        <a href="https://openrouter.ai/keys" target="_blank" class="btn btn-sm btn-outline-primary fw-bold">
+          <i class="fa-solid fa-key me-1"></i> Get OpenRouter API Key
         </a>
       </div>
       <p class="text-secondary small mb-2">
-        Gemini AI key lagane se aap WhatsApp par koi bhi deep stock research, question-answer, and company fundamentals pooch sakte hain.
+        OpenRouter se aap DeepSeek V3, DeepSeek R1, Llama 3.3, ya Claude se WhatsApp par instant research karwa sakte hain.
       </p>
-      <div class="input-group">
-        <input type="password" id="geminiKeyInput" class="form-control bg-dark text-light border-secondary" placeholder="Paste your Google Gemini API Key here (e.g. AIzaSy...)...">
-        <button class="btn btn-primary fw-bold" onclick="saveApiKey()"><i class="fa-solid fa-floppy-disk me-1"></i> Save AI Key</button>
+      <div class="row g-2 mb-2">
+        <div class="col-md-7">
+          <input type="password" id="openrouterKeyInput" class="form-control bg-dark text-light border-secondary" placeholder="Paste your OpenRouter API Key (sk-or-v1-...)...">
+        </div>
+        <div class="col-md-5">
+          <select id="openrouterModelSelect" class="form-select bg-dark text-light border-secondary">
+            <option value="deepseek/deepseek-chat">DeepSeek V3 (deepseek/deepseek-chat)</option>
+            <option value="deepseek/deepseek-r1">DeepSeek R1 (deepseek/deepseek-r1)</option>
+            <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B (Free)</option>
+            <option value="google/gemini-2.0-flash-exp:free">Gemini 2.0 Flash (Free)</option>
+            <option value="openai/gpt-4o-mini">OpenAI GPT-4o-mini</option>
+            <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+          </select>
+        </div>
       </div>
-      <div id="keyAlert" class="small mt-2" style="display:none;"></div>
+      <div class="d-flex justify-content-end">
+        <button class="btn btn-primary fw-bold" onclick="saveOpenRouterKey()"><i class="fa-solid fa-floppy-disk me-1"></i> Save OpenRouter Key</button>
+      </div>
+      <div id="openrouterAlert" class="small mt-2" style="display:none;"></div>
+    </div>
+
+    <!-- Google Gemini AI Key Settings -->
+    <div class="card p-3 mb-4 border-info">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="fw-bold text-info mb-0"><i class="fa-solid fa-robot me-2"></i>Connect Google Gemini AI Key (Alternative)</h6>
+        <a href="https://aistudio.google.com/app/apikey" target="_blank" class="btn btn-sm btn-outline-info fw-bold">
+          <i class="fa-solid fa-key me-1"></i> Get Free Gemini Key
+        </a>
+      </div>
+      <div class="input-group">
+        <input type="password" id="geminiKeyInput" class="form-control bg-dark text-light border-secondary" placeholder="Paste your Google Gemini API Key here (AIzaSy...)...">
+        <button class="btn btn-info fw-bold text-dark" onclick="saveGeminiKey()"><i class="fa-solid fa-floppy-disk me-1"></i> Save Gemini Key</button>
+      </div>
+      <div id="geminiAlert" class="small mt-2" style="display:none;"></div>
     </div>
 
     <!-- Live AI Q&A & Research Simulator -->
     <div class="card p-3 mb-4">
-      <h6 class="fw-bold text-warning mb-2"><i class="fa-solid fa-comments me-2"></i>Ask AI Market Research Question (Live Test)</h6>
+      <h6 class="fw-bold text-warning mb-2"><i class="fa-solid fa-comments me-2"></i>Ask AI Market Research Question (Live Web Test)</h6>
       <div class="input-group mb-2">
         <input type="text" id="aiQuestionInput" class="form-control bg-dark text-light border-secondary" placeholder="e.g. Reliance share buy karu ya sell?, PE ratio kya hai?, Best dividend stocks..." value="Reliance share me invest karna sahi rahega kya?">
         <button class="btn btn-warning fw-bold text-dark" onclick="askAiQuestion()"><i class="fa-solid fa-brain me-1"></i> Ask AI</button>
@@ -904,7 +976,9 @@ app.get('/', (req, res) => {
         document.getElementById('queryCount').innerText = data.totalQueriesProcessed || 0;
         
         const aiStatus = document.getElementById('aiEngineStatus');
-        if (data.hasGeminiKey) {
+        if (data.hasOpenrouterKey) {
+          aiStatus.innerHTML = '<span class="text-success">🟢 OpenRouter AI Active (' + (data.openrouterModel || 'DeepSeek') + ')</span>';
+        } else if (data.hasGeminiKey) {
           aiStatus.innerHTML = '<span class="text-success">🟢 Google Gemini AI Active</span>';
         } else if (data.hasOpenAiKey) {
           aiStatus.innerHTML = '<span class="text-success">🟢 OpenAI Active</span>';
@@ -922,9 +996,37 @@ app.get('/', (req, res) => {
       } catch {}
     }
 
-    async function saveApiKey() {
+    async function saveOpenRouterKey() {
+      const key = document.getElementById('openrouterKeyInput').value.trim();
+      const model = document.getElementById('openrouterModelSelect').value;
+      const alertBox = document.getElementById('openrouterAlert');
+      if (!key) {
+        alertBox.style.display = 'block';
+        alertBox.className = 'small mt-2 text-danger';
+        alertBox.innerText = 'Please paste a valid OpenRouter API Key (starts with sk-or-...).';
+        return;
+      }
+      try {
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ openrouterApiKey: key, openrouterModel: model })
+        });
+        const d = await res.json();
+        alertBox.style.display = 'block';
+        alertBox.className = 'small mt-2 text-success';
+        alertBox.innerText = '✅ OpenRouter Key (' + model + ') saved successfully! Live AI Research is active.';
+        updateStatus();
+      } catch (e) {
+        alertBox.style.display = 'block';
+        alertBox.className = 'small mt-2 text-danger';
+        alertBox.innerText = 'Error saving key: ' + e.message;
+      }
+    }
+
+    async function saveGeminiKey() {
       const key = document.getElementById('geminiKeyInput').value.trim();
-      const alertBox = document.getElementById('keyAlert');
+      const alertBox = document.getElementById('geminiAlert');
       if (!key) {
         alertBox.style.display = 'block';
         alertBox.className = 'small mt-2 text-danger';
@@ -940,7 +1042,7 @@ app.get('/', (req, res) => {
         const d = await res.json();
         alertBox.style.display = 'block';
         alertBox.className = 'small mt-2 text-success';
-        alertBox.innerText = '✅ Gemini API Key saved successfully! Live AI Research is now active.';
+        alertBox.innerText = '✅ Gemini API Key saved successfully!';
         updateStatus();
       } catch (e) {
         alertBox.style.display = 'block';
@@ -1007,7 +1109,7 @@ app.listen(PORT, () => {
   console.log(`
 ======================================================
 🌐 AI Stock Research Dashboard: http://localhost:${PORT}
-📈 Realtime Stock Analytics & AI WhatsApp Assistant Live!
+📈 Realtime Stock Analytics & OpenRouter AI Live!
 ======================================================
 `);
   startWhatsAppBot();
