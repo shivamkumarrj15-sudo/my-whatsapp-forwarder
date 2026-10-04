@@ -5,6 +5,7 @@
  * - Support & Resistance Levels, Trade Plan (Entry, Targets, Stop-loss)
  * - AI Powered Financial Analysis & Conversational Market Intelligence
  *   (OpenRouter AI [DeepSeek / Llama / Claude / Gemini] + Google Gemini + OpenAI + Groq + Built-in)
+ * - WhatsApp Pairing Code (Phone Number) + QR Code Scanner
  * - Zero betting/lottery code, pure 100% Stock Market & Investment AI
  */
 
@@ -53,6 +54,7 @@ const botState = {
   status: 'connecting',
   qrDataUrl: null,
   qrRaw: null,
+  pairingCode: null,
   connectedNumber: null,
   startTime: new Date().toISOString(),
   totalQueriesProcessed: 0,
@@ -442,8 +444,7 @@ Please formulate an expert, well-structured financial research response in Hindi
     const openrouterModels = [
       appConfig.openrouterModel || 'deepseek/deepseek-chat',
       'deepseek/deepseek-r1',
-      'meta-llama/llama-3.3-70b-instruct:free',
-      'google/gemini-2.0-flash-exp:free',
+      'meta-llama/llama-3.3-70b-instruct',
       'openai/gpt-4o-mini',
     ];
 
@@ -625,8 +626,8 @@ async function startWhatsAppBot() {
       botState.qrRaw = qr;
       try {
         botState.qrDataUrl = await QRCode.toDataURL(qr, { width: 320, margin: 2 });
-        console.log('📱 New QR Code generated! Open Web Dashboard to scan.');
-        addLog('info', 'New QR Code generated. Ready to scan.');
+        console.log('📱 New QR Code generated! Open Web Dashboard to scan or get Pairing Code.');
+        addLog('info', 'New QR Code generated. Ready to connect.');
       } catch (err) {
         console.error('QR Render Error:', err);
       }
@@ -650,6 +651,7 @@ async function startWhatsAppBot() {
     } else if (connection === 'open') {
       botState.status = 'connected';
       botState.qrDataUrl = null;
+      botState.pairingCode = null;
       const userJid = sock.user.id;
       const userPhone = userJid.split(':')[0].replace(/\D/g, '');
       botState.connectedNumber = `+${userPhone}`;
@@ -717,7 +719,6 @@ async function startWhatsAppBot() {
         }
 
         const words = text.split(/\s+/);
-        const hasLLMKey = !!(appConfig.openrouterApiKey || appConfig.geminiApiKey || appConfig.openaiApiKey || appConfig.groqApiKey);
         const isSimpleTicker = words.length <= 2 && stockResult && stockResult.report;
 
         // 3. Response Generation
@@ -769,6 +770,32 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+// Request 8-Digit Pairing Code (Phone Number based - No QR / camera needed)
+app.post('/api/pair', async (req, res) => {
+  try {
+    let { phone } = req.body;
+    if (!phone) return res.status(400).json({ error: 'Phone number is required' });
+    phone = phone.replace(/\D/g, '');
+    if (!phone.startsWith('91') && phone.length === 10) {
+      phone = '91' + phone;
+    }
+    if (!sock) {
+      return res.status(500).json({ error: 'WhatsApp bot engine starting... please try again in 5 seconds.' });
+    }
+    if (botState.status === 'connected') {
+      return res.json({ success: false, message: 'WhatsApp is already connected!' });
+    }
+    const code = await sock.requestPairingCode(phone);
+    botState.pairingCode = code;
+    console.log(`📱 Generated WhatsApp Pairing Code: ${code} for +${phone}`);
+    addLog('info', `Pairing Code: ${code} generated for +${phone}`);
+    res.json({ success: true, code, formattedPhone: `+${phone}` });
+  } catch (err) {
+    console.error('Error requesting pairing code:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/config', (req, res) => {
   const { openrouterApiKey, openrouterModel, geminiApiKey, openaiApiKey, groqApiKey } = req.body;
   if (openrouterApiKey !== undefined) appConfig.openrouterApiKey = openrouterApiKey.trim();
@@ -815,15 +842,17 @@ app.get('/', (req, res) => {
     .badge-status { font-size: 0.9rem; padding: 6px 12px; }
     .stock-tag { background: #0f172a; border: 1px solid #38bdf8; color: #38bdf8; border-radius: 20px; padding: 4px 12px; font-size: 12px; cursor: pointer; display: inline-block; margin: 2px; }
     .stock-tag:hover { background: #38bdf8; color: #0f172a; }
+    .pairing-box { background: #0f172a; border: 2px dashed #38bdf8; border-radius: 12px; }
+    .code-display { font-size: 2.2rem; letter-spacing: 6px; font-weight: 800; color: #38bdf8; }
   </style>
 </head>
-<body class="p-4">
+<body class="p-3 p-md-4">
   <div class="container" style="max-width: 950px;">
     <!-- Top Header -->
     <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom border-secondary">
       <div>
         <h3 class="fw-bold mb-0" style="color: #38bdf8;"><i class="fa-solid fa-chart-line me-2"></i>AI Stock Research WhatsApp Bot</h3>
-        <p class="text-secondary small mb-0">OpenRouter AI (DeepSeek / Llama) & Real-Time Technical Market Intelligence</p>
+        <p class="text-secondary small mb-0">DeepSeek V3 / OpenRouter AI & Real-Time Technical Analysis</p>
       </div>
       <div class="text-end">
         <span id="statusBadge" class="badge bg-secondary badge-status">Connecting...</span>
@@ -853,29 +882,76 @@ app.get('/', (req, res) => {
       </div>
     </div>
 
+    <!-- WhatsApp Connection Box (Pairing Code + QR) -->
+    <div class="card p-4 mb-4 border-warning" id="connectContainer">
+      <h5 class="fw-bold text-warning mb-3"><i class="fa-brands fa-whatsapp me-2"></i>Connect WhatsApp (2 Easy Ways)</h5>
+      
+      <ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active fw-bold" id="pills-pair-tab" data-bs-toggle="pill" data-bs-target="#pills-pair" type="button" role="tab"><i class="fa-solid fa-mobile-screen-button me-1"></i> Way 1: 8-Digit Code (No Scanner Needed)</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link fw-bold" id="pills-qr-tab" data-bs-toggle="pill" data-bs-target="#pills-qr" type="button" role="tab"><i class="fa-solid fa-qrcode me-1"></i> Way 2: Scan QR Code</button>
+        </li>
+      </ul>
+
+      <div class="tab-content" id="pills-tabContent">
+        <!-- Way 1: Phone Pairing Code -->
+        <div class="tab-pane fade show active" id="pills-pair" role="tabpanel">
+          <div class="p-3 pairing-box">
+            <p class="small text-light mb-2">
+              <strong>Enter your WhatsApp Phone Number</strong> to get an 8-digit code. You can enter this code in your phone's WhatsApp without needing any camera or scanner!
+            </p>
+            <div class="input-group mb-3">
+              <span class="input-group-text bg-dark text-secondary border-secondary">+91</span>
+              <input type="text" id="phoneNumberInput" class="form-control bg-dark text-light border-secondary" placeholder="Enter 10-digit number (e.g. 8005844014)..." value="8005844014">
+              <button class="btn btn-warning fw-bold text-dark" onclick="requestPairingCode()"><i class="fa-solid fa-key me-1"></i> Get Pairing Code</button>
+            </div>
+            
+            <div id="pairingResultBox" style="display:none;" class="text-center p-3 bg-dark rounded border border-warning">
+              <div class="text-secondary small mb-1">Enter this 8-digit code in your WhatsApp:</div>
+              <div id="pairingCodeDisplay" class="code-display mb-2">--------</div>
+              <div class="text-start small text-warning p-2 rounded bg-black bg-opacity-50">
+                <strong>Steps on your Mobile:</strong><br>
+                1. Open <strong>WhatsApp</strong> on your phone.<br>
+                2. Tap <strong>3 Dots (Menu)</strong> or <strong>Settings</strong> ➡️ <strong>Linked Devices</strong> ➡️ <strong>Link a Device</strong>.<br>
+                3. Tap <strong>"Link with phone number instead"</strong> at the bottom.<br>
+                4. Enter the 8-digit code shown above!
+              </div>
+            </div>
+            <div id="pairError" class="small text-danger mt-2" style="display:none;"></div>
+          </div>
+        </div>
+
+        <!-- Way 2: QR Scanner -->
+        <div class="tab-pane fade" id="pills-qr" role="tabpanel">
+          <div class="text-center p-3">
+            <div class="text-secondary small mb-2">Scan this QR Code from WhatsApp ➡️ Linked Devices:</div>
+            <div id="qrLoading" class="text-muted small">Generating QR Code...</div>
+            <img id="qrImg" src="" alt="WhatsApp QR" class="img-fluid rounded shadow" style="max-width: 260px; display: none;">
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- OpenRouter AI Settings -->
     <div class="card p-3 mb-4 border-primary">
       <div class="d-flex justify-content-between align-items-center mb-2">
-        <h6 class="fw-bold text-primary mb-0"><i class="fa-solid fa-network-wired me-2"></i>Connect OpenRouter AI (DeepSeek / Llama / Gemini / Claude)</h6>
+        <h6 class="fw-bold text-primary mb-0"><i class="fa-solid fa-network-wired me-2"></i>OpenRouter AI (DeepSeek / Llama / Gemini)</h6>
         <a href="https://openrouter.ai/keys" target="_blank" class="btn btn-sm btn-outline-primary fw-bold">
-          <i class="fa-solid fa-key me-1"></i> Get OpenRouter API Key
+          <i class="fa-solid fa-key me-1"></i> OpenRouter Keys
         </a>
       </div>
-      <p class="text-secondary small mb-2">
-        OpenRouter se aap DeepSeek V3, DeepSeek R1, Llama 3.3, ya Claude se WhatsApp par instant research karwa sakte hain.
-      </p>
       <div class="row g-2 mb-2">
         <div class="col-md-7">
-          <input type="password" id="openrouterKeyInput" class="form-control bg-dark text-light border-secondary" placeholder="Paste your OpenRouter API Key (sk-or-v1-...)...">
+          <input type="password" id="openrouterKeyInput" class="form-control bg-dark text-light border-secondary" placeholder="Paste your OpenRouter Key (sk-or-v1-...)...">
         </div>
         <div class="col-md-5">
           <select id="openrouterModelSelect" class="form-select bg-dark text-light border-secondary">
             <option value="deepseek/deepseek-chat">DeepSeek V3 (deepseek/deepseek-chat)</option>
             <option value="deepseek/deepseek-r1">DeepSeek R1 (deepseek/deepseek-r1)</option>
-            <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B (Free)</option>
-            <option value="google/gemini-2.0-flash-exp:free">Gemini 2.0 Flash (Free)</option>
+            <option value="meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B (meta-llama/llama-3.3-70b-instruct)</option>
             <option value="openai/gpt-4o-mini">OpenAI GPT-4o-mini</option>
-            <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
           </select>
         </div>
       </div>
@@ -885,26 +961,11 @@ app.get('/', (req, res) => {
       <div id="openrouterAlert" class="small mt-2" style="display:none;"></div>
     </div>
 
-    <!-- Google Gemini AI Key Settings -->
-    <div class="card p-3 mb-4 border-info">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <h6 class="fw-bold text-info mb-0"><i class="fa-solid fa-robot me-2"></i>Connect Google Gemini AI Key (Alternative)</h6>
-        <a href="https://aistudio.google.com/app/apikey" target="_blank" class="btn btn-sm btn-outline-info fw-bold">
-          <i class="fa-solid fa-key me-1"></i> Get Free Gemini Key
-        </a>
-      </div>
-      <div class="input-group">
-        <input type="password" id="geminiKeyInput" class="form-control bg-dark text-light border-secondary" placeholder="Paste your Google Gemini API Key here (AIzaSy...)...">
-        <button class="btn btn-info fw-bold text-dark" onclick="saveGeminiKey()"><i class="fa-solid fa-floppy-disk me-1"></i> Save Gemini Key</button>
-      </div>
-      <div id="geminiAlert" class="small mt-2" style="display:none;"></div>
-    </div>
-
     <!-- Live AI Q&A & Research Simulator -->
     <div class="card p-3 mb-4">
       <h6 class="fw-bold text-warning mb-2"><i class="fa-solid fa-comments me-2"></i>Ask AI Market Research Question (Live Web Test)</h6>
       <div class="input-group mb-2">
-        <input type="text" id="aiQuestionInput" class="form-control bg-dark text-light border-secondary" placeholder="e.g. Reliance share buy karu ya sell?, PE ratio kya hai?, Best dividend stocks..." value="Reliance share me invest karna sahi rahega kya?">
+        <input type="text" id="aiQuestionInput" class="form-control bg-dark text-light border-secondary" placeholder="e.g. Reliance share buy karu ya sell?, PE ratio kya hai?, Best dividend stocks..." value="Reliance share me invest karna kaisa rahega?">
         <button class="btn btn-warning fw-bold text-dark" onclick="askAiQuestion()"><i class="fa-solid fa-brain me-1"></i> Ask AI</button>
       </div>
       <div id="aiAnswerBox" class="p-3 bg-dark rounded border border-secondary" style="display:none; white-space: pre-wrap; font-family: monospace; font-size: 13px; max-height: 250px; overflow-y: auto;"></div>
@@ -937,14 +998,6 @@ app.get('/', (req, res) => {
       <div id="stockOutput" class="mt-3 p-3 bg-dark rounded border border-secondary" style="display:none; white-space: pre-wrap; font-family: monospace; font-size: 13px; max-height: 260px; overflow-y: auto;"></div>
     </div>
 
-    <!-- WhatsApp QR Code (when disconnected) -->
-    <div class="card p-3 mb-4" id="qrContainer" style="display:none;">
-      <h5 class="fw-bold text-warning text-center mb-3">📱 WhatsApp QR Code (Scan to Connect)</h5>
-      <div class="text-center">
-        <img id="qrImg" src="" alt="QR Code" class="img-fluid rounded shadow" style="max-width: 280px;">
-      </div>
-    </div>
-
     <!-- Live Activity Logs -->
     <div class="card p-3">
       <h5 class="fw-bold text-light mb-3"><i class="fa-solid fa-clock-rotate-left me-2"></i>Live Activity Logs</h5>
@@ -954,6 +1007,7 @@ app.get('/', (req, res) => {
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     async function updateStatus() {
       try {
@@ -964,13 +1018,15 @@ app.get('/', (req, res) => {
           badge.className = 'badge bg-success badge-status';
           badge.innerHTML = '<i class="fa-solid fa-circle-check me-1"></i> Connected';
           document.getElementById('connectedAs').innerText = data.connectedNumber || 'Active';
-          document.getElementById('qrContainer').style.display = 'none';
+          document.getElementById('connectContainer').style.display = 'none';
         } else if (data.status === 'qr_ready') {
           badge.className = 'badge bg-warning text-dark badge-status';
-          badge.innerHTML = '<i class="fa-solid fa-qrcode me-1"></i> Scan QR';
+          badge.innerHTML = '<i class="fa-solid fa-qrcode me-1"></i> Ready to Connect';
+          document.getElementById('connectContainer').style.display = 'block';
           if (data.qrDataUrl) {
             document.getElementById('qrImg').src = data.qrDataUrl;
-            document.getElementById('qrContainer').style.display = 'block';
+            document.getElementById('qrImg').style.display = 'inline-block';
+            document.getElementById('qrLoading').style.display = 'none';
           }
         }
         document.getElementById('queryCount').innerText = data.totalQueriesProcessed || 0;
@@ -996,6 +1052,43 @@ app.get('/', (req, res) => {
       } catch {}
     }
 
+    async function requestPairingCode() {
+      const phoneInput = document.getElementById('phoneNumberInput').value.trim();
+      const errBox = document.getElementById('pairError');
+      const resBox = document.getElementById('pairingResultBox');
+      const codeDisplay = document.getElementById('pairingCodeDisplay');
+      
+      if (!phoneInput) {
+        errBox.style.display = 'block';
+        errBox.innerText = 'Please enter your phone number.';
+        return;
+      }
+
+      errBox.style.display = 'none';
+      codeDisplay.innerText = 'FETCHING...';
+      resBox.style.display = 'block';
+
+      try {
+        const res = await fetch('/api/pair', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: phoneInput })
+        });
+        const data = await res.json();
+        if (data.success && data.code) {
+          codeDisplay.innerText = data.code;
+        } else {
+          errBox.style.display = 'block';
+          errBox.innerText = data.error || data.message || 'Failed to generate pairing code. Please try again.';
+          resBox.style.display = 'none';
+        }
+      } catch (e) {
+        errBox.style.display = 'block';
+        errBox.innerText = 'Error: ' + e.message;
+        resBox.style.display = 'none';
+      }
+    }
+
     async function saveOpenRouterKey() {
       const key = document.getElementById('openrouterKeyInput').value.trim();
       const model = document.getElementById('openrouterModelSelect').value;
@@ -1016,33 +1109,6 @@ app.get('/', (req, res) => {
         alertBox.style.display = 'block';
         alertBox.className = 'small mt-2 text-success';
         alertBox.innerText = '✅ OpenRouter Key (' + model + ') saved successfully! Live AI Research is active.';
-        updateStatus();
-      } catch (e) {
-        alertBox.style.display = 'block';
-        alertBox.className = 'small mt-2 text-danger';
-        alertBox.innerText = 'Error saving key: ' + e.message;
-      }
-    }
-
-    async function saveGeminiKey() {
-      const key = document.getElementById('geminiKeyInput').value.trim();
-      const alertBox = document.getElementById('geminiAlert');
-      if (!key) {
-        alertBox.style.display = 'block';
-        alertBox.className = 'small mt-2 text-danger';
-        alertBox.innerText = 'Please paste a valid Gemini API Key.';
-        return;
-      }
-      try {
-        const res = await fetch('/api/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ geminiApiKey: key })
-        });
-        const d = await res.json();
-        alertBox.style.display = 'block';
-        alertBox.className = 'small mt-2 text-success';
-        alertBox.innerText = '✅ Gemini API Key saved successfully!';
         updateStatus();
       } catch (e) {
         alertBox.style.display = 'block';
