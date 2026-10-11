@@ -1,12 +1,16 @@
 /**
- * AI Stock Research Assistant - WhatsApp Bot & Live Market Dashboard
- * - Real-time Stock Market Quotes & Data (NSE, BSE, US Markets, Crypto, Commodities)
- * - Automated Technical Analysis: RSI (14), 50-day & 200-day Moving Averages
- * - Support & Resistance Levels, Trade Plan (Entry, Targets, Stop-loss)
- * - AI Powered Financial Analysis & Conversational Market Intelligence
- *   (OpenRouter AI [DeepSeek / Llama / Claude / Gemini] + Google Gemini + OpenAI + Groq + Built-in)
- * - WhatsApp Pairing Code (Phone Number) + QR Code Scanner
- * - Zero betting/lottery code, pure 100% Stock Market & Investment AI
+ * Human Friend & Smart Service Assistant - WhatsApp Bot & Dashboard
+ * 
+ * Features:
+ * - Natural 1-on-1 human chatting (sounds 100% like a real friend, NEVER a bot/AI).
+ * - No symbols, no asterisks, no bullets - pure raw human WhatsApp texting.
+ * - Concise, short replies (1 to 2 sentences max).
+ * - Realistic ~10-second delay with WhatsApp 'composing' (typing...) presence.
+ * - Service inquiry: asks what service they need and what their budget is.
+ * - Service pricing rule: online starting & max price with 5% EXTRA added.
+ * - Chats about any topic (stocks, tech, life, work) seamlessly as a friend.
+ * - Multi-turn conversation memory per user.
+ * - WhatsApp 8-Digit Pairing Code (Phone Number) + QR Code.
  */
 
 const {
@@ -26,6 +30,7 @@ const path = require('path');
 const PORT = process.env.PORT || 2785;
 const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
 const CONFIG_FILE = path.join(__dirname, 'ai_stock_config.json');
+const MEMORY_FILE = path.join(__dirname, 'conversations_memory.json');
 
 // Memory Persistence for AI settings
 let appConfig = {
@@ -47,6 +52,37 @@ function saveConfig() {
   try {
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(appConfig, null, 2), 'utf8');
   } catch {}
+}
+
+// Conversation Memory (Multi-turn chat history per user)
+let conversations = {};
+if (fs.existsSync(MEMORY_FILE)) {
+  try {
+    conversations = JSON.parse(fs.readFileSync(MEMORY_FILE, 'utf8'));
+  } catch {
+    conversations = {};
+  }
+}
+
+function saveConversations() {
+  try {
+    fs.writeFileSync(MEMORY_FILE, JSON.stringify(conversations, null, 2), 'utf8');
+  } catch {}
+}
+
+function getHistory(sender) {
+  if (!conversations[sender]) conversations[sender] = [];
+  return conversations[sender];
+}
+
+function appendHistory(sender, role, text) {
+  if (!conversations[sender]) conversations[sender] = [];
+  conversations[sender].push({ role, text, time: Date.now() });
+  // Keep last 10 messages for context
+  if (conversations[sender].length > 12) {
+    conversations[sender] = conversations[sender].slice(-10);
+  }
+  saveConversations();
 }
 
 // Bot State
@@ -91,364 +127,66 @@ function isDuplicate(msgId, text, sender) {
   return false;
 }
 
-// ==================== POPULAR STOCK ALIASES ====================
-const POPULAR_STOCKS = {
-  'RELIANCE': 'RELIANCE.NS',
-  'TATA MOTORS': 'TATAMOTORS.NS',
-  'TATAMOTORS': 'TATAMOTORS.NS',
-  'TATA POWER': 'TATAPOWER.NS',
-  'TATAPOWER': 'TATAPOWER.NS',
-  'TATA STEEL': 'TATASTEEL.NS',
-  'TATASTEEL': 'TATASTEEL.NS',
-  'TCS': 'TCS.NS',
-  'INFY': 'INFY.NS',
-  'INFOSYS': 'INFY.NS',
-  'HDFC BANK': 'HDFCBANK.NS',
-  'HDFCBANK': 'HDFCBANK.NS',
-  'ICICI BANK': 'ICICIBANK.NS',
-  'ICICIBANK': 'ICICIBANK.NS',
-  'SBI': 'SBIN.NS',
-  'SBIN': 'SBIN.NS',
-  'STATE BANK': 'SBIN.NS',
-  'SUZLON': 'SUZLON.NS',
-  'SUZLON ENERGY': 'SUZLON.NS',
-  'ZOMATO': 'ZOMATO.NS',
-  'PAYTM': 'PAYTM.NS',
-  'ITC': 'ITC.NS',
-  'ADANI ENTERPRISES': 'ADANIENT.NS',
-  'ADANIENT': 'ADANIENT.NS',
-  'ADANI PORTS': 'ADANIPORTS.NS',
-  'ADANIPORTS': 'ADANIPORTS.NS',
-  'ADANI POWER': 'ADANIPOWER.NS',
-  'ADANIPOWER': 'ADANIPOWER.NS',
-  'ADANI GREEN': 'ADANIGREEN.NS',
-  'ADANIGREEN': 'ADANIGREEN.NS',
-  'WIPRO': 'WIPRO.NS',
-  'HCLTECH': 'HCLTECH.NS',
-  'HCL TECH': 'HCLTECH.NS',
-  'BAJFINANCE': 'BAJFINANCE.NS',
-  'BAJAJ FINANCE': 'BAJFINANCE.NS',
-  'BAJAJ FINSERV': 'BAJAJFINSV.NS',
-  'BAJAJ AUTO': 'BAJAJ-AUTO.NS',
-  'MARUTI': 'MARUTI.NS',
-  'MARUTI SUZUKI': 'MARUTI.NS',
-  'M&M': 'M&M.NS',
-  'MAHINDRA': 'M&M.NS',
-  'BHARTI AIRTEL': 'BHARTIARTL.NS',
-  'AIRTEL': 'BHARTIARTL.NS',
-  'BHARTIARTL': 'BHARTIARTL.NS',
-  'L&T': 'LT.NS',
-  'LT': 'LT.NS',
-  'LARSEN': 'LT.NS',
-  'ASIAN PAINTS': 'ASIANPAINT.NS',
-  'ASIANPAINT': 'ASIANPAINT.NS',
-  'TITAN': 'TITAN.NS',
-  'KOTAK BANK': 'KOTAKBANK.NS',
-  'KOTAKBANK': 'KOTAKBANK.NS',
-  'AXIS BANK': 'AXISBANK.NS',
-  'AXISBANK': 'AXISBANK.NS',
-  'SUN PHARMA': 'SUNPHARMA.NS',
-  'SUNPHARMA': 'SUNPHARMA.NS',
-  'CIPLA': 'CIPLA.NS',
-  'DR REDDY': 'DRREDDY.NS',
-  'NTPC': 'NTPC.NS',
-  'ONGC': 'ONGC.NS',
-  'COAL INDIA': 'COALINDIA.NS',
-  'COALINDIA': 'COALINDIA.NS',
-  'POWERGRID': 'POWERGRID.NS',
-  'IOC': 'IOC.NS',
-  'BPCL': 'BPCL.NS',
-  'HAL': 'HAL.NS',
-  'BEL': 'BEL.NS',
-  'BHEL': 'BHEL.NS',
-  'IREDA': 'IREDA.NS',
-  'IRFC': 'IRFC.NS',
-  'RVNL': 'RVNL.NS',
-  'RAILTEL': 'RAILTEL.NS',
-  'IRCTC': 'IRCTC.NS',
-  'VEDANTA': 'VEDL.NS',
-  'VEDL': 'VEDL.NS',
-  'JIO FINANCIAL': 'JIOFIN.NS',
-  'JIOFIN': 'JIOFIN.NS',
-  'YES BANK': 'YESBANK.NS',
-  'YESBANK': 'YESBANK.NS',
-  'IDEA': 'IDEA.NS',
-  'VODAFONE IDEA': 'IDEA.NS',
-  'SWIGGY': 'SWIGGY.NS',
-  'OLA ELECTRIC': 'OLAELEC.NS',
-  'OLAELEC': 'OLAELEC.NS',
-  'NIFTY': '^NSEI',
-  'NIFTY50': '^NSEI',
-  'NIFTY 50': '^NSEI',
-  'BANKNIFTY': '^NSEBANK',
-  'BANK NIFTY': '^NSEBANK',
-  'FINNIFTY': 'NIFTY_FIN_SERVICE.NS',
-  'MIDCPNIFTY': 'NIFTY_MIDCAP_100.NS',
-  'SENSEX': '^BSESN',
-  'GOLD': 'GC=F',
-  'SILVER': 'SI=F',
-  'CRUDE': 'CL=F',
-  'CRUDE OIL': 'CL=F',
-  'BITCOIN': 'BTC-USD',
-  'BTC': 'BTC-USD',
-  'ETH': 'ETH-USD',
-  'ETHEREUM': 'ETH-USD',
-  'APPLE': 'AAPL',
-  'TESLA': 'TSLA',
-  'MICROSOFT': 'MSFT',
-  'NVIDIA': 'NVDA',
-  'GOOGLE': 'GOOGL',
-  'AMAZON': 'AMZN',
-  'META': 'META',
-};
+// ==================== HUMAN TEXT SANITIZER ====================
+function sanitizeHumanText(text) {
+  if (!text) return '';
+  let cleaned = text
+    .replace(/[*_#~`]/g, '') // remove markdown symbols (*, _, #, ~, `)
+    .replace(/^[•\-\*]\s+/gm, '') // remove bullet points
+    .replace(/\b(Namaste|Hello|Hi),\s*(main|mein)\s*.*?(hoon|hu)\b/gi, '')
+    .replace(/\bAs an AI\b.*?\./gi, '')
+    .replace(/\bI am an AI\b.*?\./gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 
-// ==================== STOCK DATA & TECHNICAL ENGINE ====================
-async function resolveSymbol(rawQuery) {
-  const clean = rawQuery.trim();
-  const upper = clean.toUpperCase();
-
-  // Check alias map
-  if (POPULAR_STOCKS[upper]) return POPULAR_STOCKS[upper];
-
-  // If ends with .NS, .BO, .US, or starts with ^, use directly
-  if (upper.includes('.') || upper.startsWith('^') || upper.includes('-') || upper.includes('=')) {
-    return upper;
+  // If there are multiple paragraphs, keep it concise (max 2-3 lines)
+  const lines = cleaned.split('\n').filter(l => l.trim().length > 0);
+  if (lines.length > 3) {
+    cleaned = lines.slice(0, 3).join('\n');
   }
-
-  // Try Yahoo Search
-  try {
-    const sUrl = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(clean)}&quotesCount=3&newsCount=0`;
-    const sRes = await fetch(sUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-    });
-    const sData = await sRes.json();
-    if (sData?.quotes?.length > 0) {
-      return sData.quotes[0].symbol;
-    }
-  } catch {}
-
-  // Default to NSE
-  return `${upper}.NS`;
+  return cleaned;
 }
 
-async function fetchStockAnalysis(query) {
-  try {
-    const symbol = await resolveSymbol(query);
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1y`;
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-    });
-    const json = await res.json();
-    const res0 = json?.chart?.result?.[0];
-    if (!res0) return null;
+// ==================== NATURAL HUMAN AI ENGINE ====================
+async function generateHumanReply(sender, userMessage) {
+  const history = getHistory(sender);
+  const historyFormatted = history.slice(-6).map(h => `${h.role === 'user' ? 'User' : 'Me'}: ${h.text}`).join('\n');
 
-    const meta = res0.meta;
-    const quotes = res0.indicators?.quote?.[0];
-    const rawCloses = quotes?.close?.filter((c) => c !== null && !isNaN(c)) || [];
-    const rawHighs = quotes?.high?.filter((c) => c !== null && !isNaN(c)) || [];
-    const rawLows = quotes?.low?.filter((c) => c !== null && !isNaN(c)) || [];
-    const rawVolumes = quotes?.volume?.filter((c) => c !== null && !isNaN(c)) || [];
+  const systemInstruction = `You are a real, normal human friend chatting 1-on-1 on WhatsApp.
 
-    if (rawCloses.length === 0) return null;
+CRITICAL INSTRUCTIONS:
+1. NEVER sound like a bot, AI, customer care, or assistant. NEVER say 'Namaste! Main AI hoon' or 'Kaise madad kar sakta hoon'. Talk casually like a normal person on WhatsApp.
+2. Absolutely NO symbols or formatting: DO NOT use asterisks (*bold*), bullet points (- ), numbering, emojis spam, or markdown. Output raw, clean, plain chat text only.
+3. Keep answers very short and direct: 1 to 2 sentences max. Just like people text on WhatsApp.
+4. If talking about any general topic (daily life, stocks, crypto, cricket, tech, banter), talk naturally about that topic as a friend.
+5. If the user mentions or asks about work or services (e.g. website, app, graphic, marketing, etc.):
+   - Ask them casually what exact service they need and what their budget is.
+6. When quoting or stating the price of ANY service demanded by the user:
+   - Provide the standard online market starting price and maximum price with 5% EXTRA added.
+   - Reference starting and max prices (+5% included):
+     * Website Development: starting 5,250 to max 26,250
+     * E-Commerce Store: starting 12,600 to max 52,500
+     * Mobile App Development: starting 26,250 to max 1,05,000
+     * Graphic Design / Logo: starting 1,050 to max 5,250
+     * Video Editing / Reels: starting 1,575 to max 8,400
+     * SEO: starting 6,300 to max 21,000
+     * Social Media Ads / Marketing: starting 7,350 to max 26,250
+     * WhatsApp Bot / Automation: starting 3,150 to max 15,750
+     * (For any other service, calculate standard online starting & max price and add 5% extra).
+   - Tell them casually in 1-2 lines without sounding like an automated invoice.
+7. Tone: Match the user's language (casual Hinglish/Hindi or English).`;
 
-    const cmp = meta.regularMarketPrice || rawCloses[rawCloses.length - 1];
-    const prevClose = meta.chartPreviousClose || rawCloses[rawCloses.length - 2] || cmp;
-    const change = cmp - prevClose;
-    const changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
-    const isPositive = change >= 0;
+  let promptContext = `Recent Chat:\n${historyFormatted}\nUser: ${userMessage}\nMe:`;
 
-    // Technical SMA 50 & SMA 200
-    const sma50Closes = rawCloses.slice(-50);
-    const sma50 = sma50Closes.reduce((a, b) => a + b, 0) / (sma50Closes.length || 1);
-
-    const sma200Closes = rawCloses.slice(-200);
-    const sma200 = sma200Closes.reduce((a, b) => a + b, 0) / (sma200Closes.length || 1);
-
-    // RSI (14-period)
-    let rsi = 50;
-    if (rawCloses.length >= 15) {
-      let gains = 0, losses = 0;
-      for (let i = rawCloses.length - 14; i < rawCloses.length; i++) {
-        const diff = rawCloses[i] - rawCloses[i - 1];
-        if (diff >= 0) gains += diff;
-        else losses += Math.abs(diff);
-      }
-      const avgGain = gains / 14;
-      const avgLoss = losses / 14;
-      if (avgLoss === 0) rsi = 100;
-      else {
-        const rs = avgGain / avgLoss;
-        rsi = 100 - (100 / (1 + rs));
-      }
-    }
-
-    // Support and Resistance (Swing high/low of last 30 days)
-    const recent30Lows = rawLows.slice(-30);
-    const recent30Highs = rawHighs.slice(-30);
-    const s1 = recent30Lows.length > 0 ? Math.min(...recent30Lows) : cmp * 0.95;
-    const r1 = recent30Highs.length > 0 ? Math.max(...recent30Highs) : cmp * 1.05;
-    const s2 = s1 * 0.96;
-    const r2 = r1 * 1.04;
-
-    // Trend determination
-    let trend = '🟡 NEUTRAL / CONSOLIDATION';
-    let trendSignal = 'ACCUMULATE ON DIPS';
-    if (cmp > sma50 && sma50 > sma200) {
-      trend = '🟢 STRONG BULLISH (Up-Trend)';
-      trendSignal = 'BUY ON DIPS (Strong Trend)';
-    } else if (cmp > sma200) {
-      trend = '🟢 MODERATE BULLISH (Above 200 SMA)';
-      trendSignal = 'BUY WITH STRICT STOP-LOSS';
-    } else if (cmp < sma50 && cmp < sma200) {
-      trend = '🔴 BEARISH (Down-Trend)';
-      trendSignal = 'CAUTION / WAIT FOR REVERSAL';
-    } else if (cmp < sma50 && cmp > sma200) {
-      trend = '🟡 PULLBACK / CORRECTION';
-      trendSignal = 'WATCH SUPPORT AT 200 SMA';
-    }
-
-    // RSI Interpretation
-    let rsiZone = 'Neutral Zone (40-60)';
-    if (rsi >= 70) rsiZone = '⚠️ Overbought (>70) - Watch for Profit Booking';
-    else if (rsi <= 30) rsiZone = '🔥 Oversold (<30) - Potential Rebound / Value Buying';
-    else if (rsi > 60) rsiZone = 'Bullish Momentum (60-70)';
-    else if (rsi < 40) rsiZone = 'Weak Momentum (30-40)';
-
-    const curr = meta.currency === 'INR' ? '₹' : (meta.currency === 'USD' ? '$' : `${meta.currency} `);
-    const companyName = meta.longName || meta.shortName || symbol;
-
-    // Target Projections
-    const shortTermTarget = (cmp * 1.05).toFixed(2);
-    const mediumTermTarget = (cmp * 1.12).toFixed(2);
-    const stopLoss = (cmp * 0.95).toFixed(2);
-
-    const report = `📊 *AI STOCK RESEARCH REPORT* 📊
-━━━━━━━━━━━━━━━━━━━━━
-🏢 *${companyName}*
-📌 *Ticker:* \`${symbol}\` | *Exchange:* ${meta.exchangeName || meta.fullExchangeName || 'NSE'}
-
-💰 *Current Market Price (CMP):* ${curr}${cmp.toFixed(2)}
-📈 *Today's Change:* ${isPositive ? '🟢 +' : '🔴 '}${change.toFixed(2)} (${isPositive ? '+' : ''}${changePct.toFixed(2)}%)
-📊 *Day's Range:* ${curr}${meta.regularMarketDayLow || 'N/A'} - ${curr}${meta.regularMarketDayHigh || 'N/A'}
-🏔️ *52-Week Range:* ${curr}${meta.fiftyTwoWeekLow || 'N/A'} - ${curr}${meta.fiftyTwoWeekHigh || 'N/A'}
-📦 *Volume:* ${Number(meta.regularMarketVolume || 0).toLocaleString('en-IN')}
-
-━━━━━━━━━━━━━━━━━━━━━
-📈 *TECHNICAL ANALYSIS & INDICATORS*
-• *Trend:* ${trend}
-• *RSI (14):* ${rsi.toFixed(1)} (${rsiZone})
-• *50-Day SMA:* ${curr}${sma50.toFixed(2)} (${cmp > sma50 ? 'Above 50 SMA 🟢' : 'Below 50 SMA 🔴'})
-• *200-Day SMA:* ${curr}${sma200.toFixed(2)} (${cmp > sma200 ? 'Above 200 SMA 🟢' : 'Below 200 SMA 🔴'})
-
-🎯 *KEY SUPPORT & RESISTANCE LEVELS*
-• *Immediate Resistance (R1):* ${curr}${r1.toFixed(2)}
-• *Major Resistance (R2):* ${curr}${r2.toFixed(2)}
-• *Immediate Support (S1):* ${curr}${s1.toFixed(2)}
-• *Strong Support (S2):* ${curr}${s2.toFixed(2)}
-
-━━━━━━━━━━━━━━━━━━━━━
-🤖 *AI PERSPECTIVE & TRADE PLAN*
-• *Signal:* *${trendSignal}*
-• *Suggested Entry Zone:* ${curr}${(cmp * 0.985).toFixed(2)} - ${curr}${cmp.toFixed(2)}
-• *Target 1 (Short-Term):* ${curr}${shortTermTarget} (+5%)
-• *Target 2 (Swing/Medium):* ${curr}${mediumTermTarget} (+12%)
-• *Strict Stop-Loss:* ${curr}${stopLoss} (-5%)
-
-💡 *Tip:* Stock Market me trade karne se pehle apna risk management aur stop-loss zaroor lagayein.`;
-
-    return {
-      symbol,
-      companyName,
-      cmp,
-      change,
-      changePct,
-      sma50,
-      sma200,
-      rsi,
-      trend,
-      s1,
-      r1,
-      report,
-      rawMeta: meta,
-    };
-  } catch (err) {
-    console.error('Error fetching stock analysis:', err.message);
-    return null;
-  }
-}
-
-// Extract potential stock name or ticker from message
-function extractStockQuery(text) {
-  if (!text || typeof text !== 'string') return null;
-  const clean = text.trim();
-
-  // Remove common filler words
-  const words = clean.split(/\s+/);
-  if (words.length === 1 && clean.length >= 2 && clean.length <= 15) {
-    const ignoreSingle = ['hi', 'hello', 'hey', 'help', 'menu', 'kya', 'kaun', 'aaj', 'kal', 'ok', 'good', 'bye'];
-    if (!ignoreSingle.includes(clean.toLowerCase())) {
-      return clean;
-    }
-  }
-
-  // Check if query mentions known stock aliases
-  const upper = clean.toUpperCase();
-  for (const alias of Object.keys(POPULAR_STOCKS)) {
-    const rx = new RegExp(`\\b${alias.replace(/[\^\.\=]/g, '')}\\b`, 'i');
-    if (rx.test(upper)) {
-      return alias;
-    }
-  }
-
-  // Check phrases like "analysis of RELIANCE", "TCS share price", "Tata motors buy karein"
-  const patterns = [
-    /(?:share|stock|price|target|analysis|view|report|buy|sell|cmp|future|chart|news)\s+(?:of|for|on|in)?\s*([A-Za-z0-9\.\-\&]+)/i,
-    /([A-Za-z0-9\.\-\&]+)\s+(?:ka|ki|ke|share|stock|price|target|analysis|report|kaisa|buy|sell|future|cmp)/i,
-  ];
-
-  for (const p of patterns) {
-    const m = clean.match(p);
-    if (m && m[1] && m[1].length >= 2 && m[1].length <= 15) {
-      const candidate = m[1].trim();
-      const ignoreWords = ['kya', 'kaun', 'aaj', 'kal', 'best', 'good', 'top', 'penny', 'option', 'call', 'put', 'live', 'hai', 'bhai', 'sir'];
-      if (!ignoreWords.includes(candidate.toLowerCase())) {
-        return candidate;
-      }
-    }
-  }
-
-  return null;
-}
-
-// AI Financial Conversational Brain (OpenRouter AI / Gemini / OpenAI / Groq / Fallback)
-async function generateAIAnswer(prompt, stockData = null) {
-  let contextPrompt = `User Question / Topic: "${prompt}"`;
-  if (stockData && stockData.rawMeta) {
-    const meta = stockData.rawMeta;
-    contextPrompt += `\n\nLive Real-Time Market Data for ${stockData.companyName} (${stockData.symbol}):
-- Current Market Price: ${meta.currency || 'INR'} ${stockData.cmp} (Today: ${stockData.change >= 0 ? '+' : ''}${stockData.changePct.toFixed(2)}%)
-- Day High / Low: ${meta.regularMarketDayHigh || 'N/A'} / ${meta.regularMarketDayLow || 'N/A'}
-- 52-Week High / Low: ${meta.fiftyTwoWeekHigh || 'N/A'} / ${meta.fiftyTwoWeekLow || 'N/A'}
-- 50-Day SMA: ${stockData.sma50?.toFixed(2) || 'N/A'} | 200-Day SMA: ${stockData.sma200?.toFixed(2) || 'N/A'}
-- RSI (14): ${stockData.rsi?.toFixed(1) || 'N/A'}
-- Trend Status: ${stockData.trend || 'N/A'}
-- Support (S1): ${stockData.s1?.toFixed(2) || 'N/A'} | Resistance (R1): ${stockData.r1?.toFixed(2) || 'N/A'}
-
-Please formulate an expert, well-structured financial research response in Hindi/Hinglish (or English if user asked in English). Use bolding, bullet points, emojis, and WhatsApp friendly formatting. Provide actionable insights, technical & fundamental view, entry/exit zones, and risk factors.`;
-  } else {
-    contextPrompt += `\n\nPlease answer as an expert Indian & Global Stock Market Research AI Assistant. Format the reply cleanly for WhatsApp with emojis, bullet points, and practical financial guidance in Hindi/Hinglish (or English).`;
-  }
-
-  // 1. OpenRouter AI (DeepSeek / Llama / Claude / Gemini / Auto)
+  // 1. OpenRouter AI (DeepSeek / Llama / etc.)
   if (appConfig.openrouterApiKey) {
-    const openrouterModels = [
+    const models = [
       appConfig.openrouterModel || 'deepseek/deepseek-chat',
-      'deepseek/deepseek-r1',
       'meta-llama/llama-3.3-70b-instruct',
+      'deepseek/deepseek-r1',
       'openai/gpt-4o-mini',
     ];
-
-    for (const model of openrouterModels) {
+    for (const model of models) {
       try {
         const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
           method: 'POST',
@@ -456,56 +194,50 @@ Please formulate an expert, well-structured financial research response in Hindi
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${appConfig.openrouterApiKey}`,
             'HTTP-Referer': 'https://my-whatsapp-forwarder.onrender.com',
-            'X-Title': 'WhatsApp AI Stock Research Assistant',
+            'X-Title': 'WhatsApp Human Friend',
           },
           body: JSON.stringify({
-            model: model,
+            model,
             messages: [
-              {
-                role: 'system',
-                content: 'You are an elite Stock Market & Financial Research AI Assistant on WhatsApp. Provide insightful, structured research in Hinglish/English with WhatsApp bullet formatting and emojis.',
-              },
-              { role: 'user', content: contextPrompt },
+              { role: 'system', content: systemInstruction },
+              { role: 'user', content: promptContext },
             ],
           }),
         });
         const data = await res.json();
         const text = data?.choices?.[0]?.message?.content;
-        if (text && text.trim().length > 0) return text.trim();
+        if (text && text.trim()) return sanitizeHumanText(text);
       } catch (e) {
         console.error(`OpenRouter (${model}) error:`, e.message);
       }
     }
   }
 
-  // 2. Google Gemini API (Free & Fast)
+  // 2. Google Gemini API
   if (appConfig.geminiApiKey) {
-    const geminiModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
-    for (const model of geminiModels) {
-      try {
-        const gUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${appConfig.geminiApiKey}`;
-        const res = await fetch(gUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              {
-                role: 'user',
-                parts: [{ text: contextPrompt }],
-              },
-            ],
-          }),
-        });
-        const data = await res.json();
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text && text.trim().length > 0) return text.trim();
-      } catch (e) {
-        console.error(`Gemini (${model}) error:`, e.message);
-      }
+    try {
+      const gUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${appConfig.geminiApiKey}`;
+      const res = await fetch(gUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: `${systemInstruction}\n\n${promptContext}` }],
+            },
+          ],
+        }),
+      });
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text && text.trim()) return sanitizeHumanText(text);
+    } catch (e) {
+      console.error('Gemini error:', e.message);
     }
   }
 
-  // 3. Groq API (Free & Fast Llama-3.3)
+  // 3. Groq API
   if (appConfig.groqApiKey) {
     try {
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -517,19 +249,16 @@ Please formulate an expert, well-structured financial research response in Hindi
         body: JSON.stringify({
           model: 'llama-3.3-70b-versatile',
           messages: [
-            {
-              role: 'system',
-              content: 'You are an expert Stock Market & Financial Research AI Assistant on WhatsApp. Answer concisely and professionally in Hinglish/English with WhatsApp bullet formatting.',
-            },
-            { role: 'user', content: contextPrompt },
+            { role: 'system', content: systemInstruction },
+            { role: 'user', content: promptContext },
           ],
         }),
       });
       const data = await res.json();
       const text = data?.choices?.[0]?.message?.content;
-      if (text && text.trim().length > 0) return text.trim();
+      if (text && text.trim()) return sanitizeHumanText(text);
     } catch (e) {
-      console.error('Groq API error:', e.message);
+      console.error('Groq error:', e.message);
     }
   }
 
@@ -545,64 +274,102 @@ Please formulate an expert, well-structured financial research response in Hindi
         body: JSON.stringify({
           model: 'gpt-4o-mini',
           messages: [
-            {
-              role: 'system',
-              content: 'You are an expert Stock Market AI Assistant on WhatsApp. Provide concise, high-value financial research in Hinglish/English with WhatsApp bullet formatting.',
-            },
-            { role: 'user', content: contextPrompt },
+            { role: 'system', content: systemInstruction },
+            { role: 'user', content: promptContext },
           ],
         }),
       });
       const data = await res.json();
       const text = data?.choices?.[0]?.message?.content;
-      if (text && text.trim().length > 0) return text.trim();
+      if (text && text.trim()) return sanitizeHumanText(text);
     } catch (e) {
-      console.error('OpenAI API error:', e.message);
+      console.error('OpenAI error:', e.message);
     }
   }
 
-  // 5. Built-in Smart Financial Guidance Fallback
-  if (stockData && stockData.report) {
-    return `${stockData.report}\n\n🤖 *AI Research Note:* Technical signal: *${stockData.trend || 'Consolidation'}*. Follow proper risk management and stop-loss.`;
+  // 5. Built-in Natural Human Fallback Engine
+  const lower = userMessage.toLowerCase();
+  if (lower.includes('website') || lower.includes('web')) {
+    return 'Bhai website ka market me starting 5,250 se lekar 26,250 tak rehta hai requirements ke hisaab se. Tera kaisa plan hai aur budget kitna hai?';
   }
-
-  return `🤖 *AI FINANCIAL RESEARCH ASSISTANT*
-━━━━━━━━━━━━━━━━━━━━━
-Aapke sawal: *"${prompt}"*
-
-💡 *Market Research & Key Guidelines:*
-1. **Stock Analysis:** Kisi bhi specific share ka live data & technical report dekhne ke liye uska naam type karein (jaise: \`RELIANCE\`, \`TATAMOTORS\`, \`SUZLON\`, \`TCS\`, \`NIFTY\`).
-2. **Moving Averages:** 50 SMA & 200 SMA ke upar bane rahne wale shares strong uptrend me mane jate hain.
-3. **Risk Management:** Swing trading me 3% se 5% ka strict Stop-Loss zaroor follow karein.
-4. **Diversification:** Apne portfolio ko leading blue-chip aur growth stocks me diversify karein.
-
-✨ *Tip:* Deep AI Answers aur detailed Q&A ke liye Dashboard par apna OpenRouter ya Gemini API Key link karein!`;
-}
-
-// Help Menu Message
-function getHelpMenu() {
-  return `👋 *Namaste! Main hoon aapka AI Stock Research Assistant* 📈
-
-Aap mujhse kisi bhi Stock ki **Live Price, Technical Indicators (RSI, 50/200 SMA), Support & Resistance** aur **AI Trade Plan** pooch sakte hain!
-
-━━━━━━━━━━━━━━━━━━━━━
-🔍 *Kaise Search Karein:*
-• Stock Name / Ticker: \`RELIANCE\`, \`TATAMOTORS\`, \`SUZLON\`, \`TCS\`
-• Sawal / Analysis: \`Tata Motors target\`, \`Reliance me invest karein ya nahi?\`
-• Indices & Commodities: \`NIFTY 50\`, \`BANKNIFTY\`, \`GOLD\`, \`BITCOIN\`
-• Q&A & Research: \`PE ratio kya hota hai?\`, \`Swing trading strategy in Hindi\`
-
-💡 *Abhi kisi bhi stock ka naam ya sawal bhej kar check karein!*`;
+  if (lower.includes('app') || lower.includes('application')) {
+    return 'App ka starting lagbhag 26,250 se 1,05,000 tak jata hai features ke hisaab se. Tujhe kis type ka app banwana hai aur budget kya hai?';
+  }
+  if (lower.includes('logo') || lower.includes('graphic') || lower.includes('design')) {
+    return 'Logo aur graphics ka normally 1,050 se 5,250 tak rehta hai quality pe depend karke. Tera kya budget hai bata?';
+  }
+  if (lower.includes('video') || lower.includes('reel') || lower.includes('edit')) {
+    return 'Video editing ka starting 1,575 se 8,400 tak chal raha hai bhai video ke hisaab se. Kaisa content edit karwana hai?';
+  }
+  if (lower.includes('service') || lower.includes('kaam') || lower.includes('charges') || lower.includes('price')) {
+    return 'Haan bhai bata kaunsa kaam karwana hai tujhe? Aur budget kitna socha hai tune?';
+  }
+  if (lower.includes('hi') || lower.includes('hello') || lower.includes('hey') || lower.includes('kaisa hai')) {
+    return 'Sahi chal rha hai bhai, tu bata kya haal chaal?';
+  }
+  return 'Haan bhai bol, kya scene hai?';
 }
 
 // ==================== BAILEYS WHATSAPP BOT ====================
 let sock = null;
 
+// Debounce & 10-second human delay queue per contact
+const messageQueues = new Map();
+
+function enqueueHumanReply(remoteJid, senderPhone, incomingText) {
+  // If queue doesn't exist, create it
+  if (!messageQueues.has(remoteJid)) {
+    messageQueues.set(remoteJid, {
+      texts: [],
+      timer: null,
+    });
+  }
+
+  const q = messageQueues.get(remoteJid);
+  q.texts.push(incomingText);
+
+  // Reset timer on new rapid messages so we accumulate user's thought
+  if (q.timer) clearTimeout(q.timer);
+
+  // Set 10-second human delay
+  q.timer = setTimeout(async () => {
+    try {
+      const combinedText = q.texts.join(' ');
+      messageQueues.delete(remoteJid);
+
+      appendHistory(senderPhone, 'user', combinedText);
+      console.log(`\n⏳ Simulating human typing presence for +${senderPhone}...`);
+
+      // Start WhatsApp typing status (composing)
+      if (sock) {
+        await sock.sendPresenceUpdate('composing', remoteJid).catch(() => {});
+      }
+
+      // Generate natural human reply
+      const reply = await generateHumanReply(senderPhone, combinedText);
+
+      // Natural typing wait of ~4-5 seconds so the other person sees "typing..."
+      await new Promise(r => setTimeout(r, 4500));
+
+      if (sock && reply) {
+        await sock.sendMessage(remoteJid, { text: reply });
+        await sock.sendPresenceUpdate('paused', remoteJid).catch(() => {});
+        appendHistory(senderPhone, 'assistant', reply);
+        console.log(`💬 Sent Human Reply to +${senderPhone}: "${reply}"`);
+        addLog('reply', `Replied to +${senderPhone}: "${reply}"`);
+      }
+    } catch (err) {
+      console.error('Error in delayed human reply:', err.message);
+      addLog('error', `Reply error: ${err.message}`);
+    }
+  }, 6000); // 6s debounce + 4.5s typing = ~10.5s total realistic human response time
+}
+
 async function startWhatsAppBot() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
 
-  console.log(`\n🚀 Initializing WhatsApp AI Stock Research Assistant (Baileys v${version.join('.')})...`);
+  console.log(`\n🚀 Initializing WhatsApp Human Friend Bot (Baileys v${version.join('.')})...`);
   botState.status = 'connecting';
 
   sock = makeWASocket({
@@ -626,8 +393,8 @@ async function startWhatsAppBot() {
       botState.qrRaw = qr;
       try {
         botState.qrDataUrl = await QRCode.toDataURL(qr, { width: 320, margin: 2 });
-        console.log('📱 New QR Code generated! Open Web Dashboard to scan or get Pairing Code.');
-        addLog('info', 'New QR Code generated. Ready to connect.');
+        console.log('📱 QR Code ready. Also available via 8-digit Pairing Code.');
+        addLog('info', 'QR Code & Pairing Code ready.');
       } catch (err) {
         console.error('QR Render Error:', err);
       }
@@ -655,7 +422,7 @@ async function startWhatsAppBot() {
       const userJid = sock.user.id;
       const userPhone = userJid.split(':')[0].replace(/\D/g, '');
       botState.connectedNumber = `+${userPhone}`;
-      console.log(`\n✅ WhatsApp AI Stock Assistant Connected Successfully as +${userPhone}!\n`);
+      console.log(`\n✅ WhatsApp Human Friend Assistant Connected as +${userPhone}!\n`);
       addLog('success', `WhatsApp Connected as +${userPhone}`);
     }
   });
@@ -694,51 +461,15 @@ async function startWhatsAppBot() {
 
         botState.totalQueriesProcessed++;
         console.log(`\n========================================`);
-        console.log(`📩 Stock / AI Query from +${senderPhone}: "${text}"`);
+        console.log(`📩 Incoming message from +${senderPhone}: "${text}"`);
         addLog('query', `From +${senderPhone}: "${text}"`);
 
-        const lower = text.toLowerCase();
-
-        // 1. Welcome / Help Greetings
-        if (['hi', 'hello', 'hey', 'help', 'menu', 'start', 'namaste', 'kaise ho', 'guide'].includes(lower)) {
-          const helpMsg = getHelpMenu();
-          await sock.sendMessage(remoteJid, { text: helpMsg });
-          console.log(`🤖 Sent Help Menu to +${senderPhone}`);
-          addLog('reply', `Sent Help Menu -> +${senderPhone}`);
-          console.log(`========================================`);
-          continue;
-        }
-
-        // 2. Check if a stock is mentioned
-        const stockQuery = extractStockQuery(text);
-        let stockResult = null;
-
-        if (stockQuery) {
-          console.log(`🔍 Fetching live data for stock: "${stockQuery}"...`);
-          stockResult = await fetchStockAnalysis(stockQuery);
-        }
-
-        const words = text.split(/\s+/);
-        const isSimpleTicker = words.length <= 2 && stockResult && stockResult.report;
-
-        // 3. Response Generation
-        if (isSimpleTicker) {
-          // Send crisp real-time technical analysis report
-          await sock.sendMessage(remoteJid, { text: stockResult.report });
-          console.log(`📊 Sent Technical Report for ${stockResult.symbol} to +${senderPhone}`);
-          addLog('reply', `Report: ${stockResult.symbol} (CMP: ₹${stockResult.cmp}) -> +${senderPhone}`);
-        } else {
-          // Conversational question / financial Q&A / stock research question
-          console.log(`🤖 Formulating AI Market Intelligence for: "${text}"...`);
-          const aiResponse = await generateAIAnswer(text, stockResult);
-          await sock.sendMessage(remoteJid, { text: aiResponse });
-          console.log(`🤖 Sent AI Market Intelligence Answer to +${senderPhone}`);
-          addLog('reply', `AI Answer -> +${senderPhone}`);
-        }
+        // Queue with realistic 10-second human delay + typing simulation
+        enqueueHumanReply(remoteJid, senderPhone, text);
 
         console.log(`========================================`);
       } catch (err) {
-        console.error('⚠️ Error processing stock research message:', err.message);
+        console.error('⚠️ Error processing incoming message:', err.message);
         addLog('error', `Process error: ${err.message}`);
       }
     }
@@ -804,26 +535,15 @@ app.post('/api/config', (req, res) => {
   if (openaiApiKey !== undefined) appConfig.openaiApiKey = openaiApiKey.trim();
   if (groqApiKey !== undefined) appConfig.groqApiKey = groqApiKey.trim();
   saveConfig();
-  res.json({ success: true, message: 'AI Configuration updated successfully!' });
+  res.json({ success: true, message: 'Configuration saved successfully!' });
 });
 
-app.get('/api/stock', async (req, res) => {
-  const query = req.query.q || 'RELIANCE';
-  const data = await fetchStockAnalysis(query);
-  if (!data) return res.status(404).json({ error: 'Stock not found' });
-  res.json(data);
-});
-
+// Live Test Chat Endpoint
 app.post('/api/ask', async (req, res) => {
   const { question } = req.body;
   if (!question) return res.status(400).json({ error: 'Question is required' });
-  const stockQuery = extractStockQuery(question);
-  let stockData = null;
-  if (stockQuery) {
-    stockData = await fetchStockAnalysis(stockQuery);
-  }
-  const answer = await generateAIAnswer(question, stockData);
-  res.json({ success: true, answer, stockData });
+  const reply = await generateHumanReply('web_tester', question);
+  res.json({ success: true, answer: reply });
 });
 
 app.get('/', (req, res) => {
@@ -833,17 +553,16 @@ app.get('/', (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Stock Research Assistant - WhatsApp Bot Dashboard</title>
+  <title>Human Friend AI Assistant - WhatsApp Bot Dashboard</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     body { background-color: #0b1329; color: #e2e8f0; font-family: 'Segoe UI', system-ui, sans-serif; }
     .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; }
     .badge-status { font-size: 0.9rem; padding: 6px 12px; }
-    .stock-tag { background: #0f172a; border: 1px solid #38bdf8; color: #38bdf8; border-radius: 20px; padding: 4px 12px; font-size: 12px; cursor: pointer; display: inline-block; margin: 2px; }
-    .stock-tag:hover { background: #38bdf8; color: #0f172a; }
     .pairing-box { background: #0f172a; border: 2px dashed #38bdf8; border-radius: 12px; }
     .code-display { font-size: 2.2rem; letter-spacing: 6px; font-weight: 800; color: #38bdf8; }
+    .human-chat-box { background: #0f172a; border-radius: 10px; border: 1px solid #334155; }
   </style>
 </head>
 <body class="p-3 p-md-4">
@@ -851,12 +570,12 @@ app.get('/', (req, res) => {
     <!-- Top Header -->
     <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom border-secondary">
       <div>
-        <h3 class="fw-bold mb-0" style="color: #38bdf8;"><i class="fa-solid fa-chart-line me-2"></i>AI Stock Research WhatsApp Bot</h3>
-        <p class="text-secondary small mb-0">DeepSeek V3 / OpenRouter AI & Real-Time Technical Analysis</p>
+        <h3 class="fw-bold mb-0" style="color: #38bdf8;"><i class="fa-solid fa-user-group me-2"></i>Human Friend WhatsApp Assistant</h3>
+        <p class="text-secondary small mb-0">100% Real Human Persona, 10s Typing Delay, Clean Text, Service & 5% Price Engine</p>
       </div>
       <div class="text-end">
         <span id="statusBadge" class="badge bg-secondary badge-status">Connecting...</span>
-        <div class="text-success small mt-1 fw-bold"><i class="fa-solid fa-circle me-1" style="font-size: 8px;"></i>Live AI Engine</div>
+        <div class="text-success small mt-1 fw-bold"><i class="fa-solid fa-circle me-1" style="font-size: 8px;"></i>Human Persona Live</div>
       </div>
     </div>
     
@@ -870,28 +589,28 @@ app.get('/', (req, res) => {
       </div>
       <div class="col-md-4">
         <div class="card p-3">
-          <div class="text-secondary small">Stock Queries Processed</div>
+          <div class="text-secondary small">Messages Handled</div>
           <div id="queryCount" class="fs-6 fw-bold text-success mt-1">0</div>
         </div>
       </div>
       <div class="col-md-4">
         <div class="card p-3">
-          <div class="text-secondary small">AI Brain Model</div>
-          <div id="aiEngineStatus" class="fs-6 fw-bold text-info mt-1">Loading...</div>
+          <div class="text-secondary small">Active Persona Mode</div>
+          <div id="aiEngineStatus" class="fs-6 fw-bold text-info mt-1">Human Friend (~10s Delay)</div>
         </div>
       </div>
     </div>
 
     <!-- WhatsApp Connection Box (Pairing Code + QR) -->
     <div class="card p-4 mb-4 border-warning" id="connectContainer">
-      <h5 class="fw-bold text-warning mb-3"><i class="fa-brands fa-whatsapp me-2"></i>Connect WhatsApp (2 Easy Ways)</h5>
+      <h5 class="fw-bold text-warning mb-3"><i class="fa-brands fa-whatsapp me-2"></i>Connect WhatsApp</h5>
       
       <ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
         <li class="nav-item" role="presentation">
-          <button class="nav-link active fw-bold" id="pills-pair-tab" data-bs-toggle="pill" data-bs-target="#pills-pair" type="button" role="tab"><i class="fa-solid fa-mobile-screen-button me-1"></i> Way 1: 8-Digit Code (No Scanner Needed)</button>
+          <button class="nav-link active fw-bold" id="pills-pair-tab" data-bs-toggle="pill" data-bs-target="#pills-pair" type="button" role="tab"><i class="fa-solid fa-mobile-screen-button me-1"></i> 8-Digit Code (No Scanner Needed)</button>
         </li>
         <li class="nav-item" role="presentation">
-          <button class="nav-link fw-bold" id="pills-qr-tab" data-bs-toggle="pill" data-bs-target="#pills-qr" type="button" role="tab"><i class="fa-solid fa-qrcode me-1"></i> Way 2: Scan QR Code</button>
+          <button class="nav-link fw-bold" id="pills-qr-tab" data-bs-toggle="pill" data-bs-target="#pills-qr" type="button" role="tab"><i class="fa-solid fa-qrcode me-1"></i> Scan QR Code</button>
         </li>
       </ul>
 
@@ -900,7 +619,7 @@ app.get('/', (req, res) => {
         <div class="tab-pane fade show active" id="pills-pair" role="tabpanel">
           <div class="p-3 pairing-box">
             <p class="small text-light mb-2">
-              <strong>Enter your WhatsApp Phone Number</strong> to get an 8-digit code. You can enter this code in your phone's WhatsApp without needing any camera or scanner!
+              Apna WhatsApp Phone Number daalein aur <strong>Get Pairing Code</strong> par click karein. Ye code apne phone WhatsApp me daal kar direct connect ho jayega!
             </p>
             <div class="input-group mb-3">
               <span class="input-group-text bg-dark text-secondary border-secondary">+91</span>
@@ -909,14 +628,14 @@ app.get('/', (req, res) => {
             </div>
             
             <div id="pairingResultBox" style="display:none;" class="text-center p-3 bg-dark rounded border border-warning">
-              <div class="text-secondary small mb-1">Enter this 8-digit code in your WhatsApp:</div>
+              <div class="text-secondary small mb-1">Apne WhatsApp me ye 8-digit code daalein:</div>
               <div id="pairingCodeDisplay" class="code-display mb-2">--------</div>
               <div class="text-start small text-warning p-2 rounded bg-black bg-opacity-50">
-                <strong>Steps on your Mobile:</strong><br>
-                1. Open <strong>WhatsApp</strong> on your phone.<br>
-                2. Tap <strong>3 Dots (Menu)</strong> or <strong>Settings</strong> ➡️ <strong>Linked Devices</strong> ➡️ <strong>Link a Device</strong>.<br>
-                3. Tap <strong>"Link with phone number instead"</strong> at the bottom.<br>
-                4. Enter the 8-digit code shown above!
+                <strong>Mobile Me Steps:</strong><br>
+                1. WhatsApp open karein ➡️ Upar <strong>3-Dots</strong> ya <strong>Settings</strong> par jayein.<br>
+                2. <strong>Linked Devices</strong> ➡️ <strong>Link a Device</strong> par click karein.<br>
+                3. Camera screen ke neeche <strong>"Link with phone number instead"</strong> par click karein.<br>
+                4. Ye 8-digit code daal dein!
               </div>
             </div>
             <div id="pairError" class="small text-danger mt-2" style="display:none;"></div>
@@ -926,7 +645,7 @@ app.get('/', (req, res) => {
         <!-- Way 2: QR Scanner -->
         <div class="tab-pane fade" id="pills-qr" role="tabpanel">
           <div class="text-center p-3">
-            <div class="text-secondary small mb-2">Scan this QR Code from WhatsApp ➡️ Linked Devices:</div>
+            <div class="text-secondary small mb-2">WhatsApp ➡️ Linked Devices se QR Code scan karein:</div>
             <div id="qrLoading" class="text-muted small">Generating QR Code...</div>
             <img id="qrImg" src="" alt="WhatsApp QR" class="img-fluid rounded shadow" style="max-width: 260px; display: none;">
           </div>
@@ -934,75 +653,52 @@ app.get('/', (req, res) => {
       </div>
     </div>
 
-    <!-- OpenRouter AI Settings -->
+    <!-- Live Human Chat Simulator -->
+    <div class="card p-4 mb-4 border-info">
+      <h5 class="fw-bold text-info mb-2"><i class="fa-solid fa-comments me-2"></i>Test Human Friend Chat (Live Simulator)</h5>
+      <p class="text-secondary small mb-3">Yahan test karein ki bot kitna natural human friend ki tarah reply deta hai (Bina symbols ke, 1-2 line, service inquiry & +5% price rate ke sath):</p>
+      
+      <div class="input-group mb-3">
+        <input type="text" id="testMsgInput" class="form-control bg-dark text-light border-secondary" placeholder="Type a message (e.g. bhai kaisa hai? / website banwani thi / reliance ka kya scene hai)..." value="bhai website banwani thi kitna kharcha aayega">
+        <button class="btn btn-info fw-bold text-dark" onclick="sendTestChat()"><i class="fa-solid fa-paper-plane me-1"></i> Send</button>
+      </div>
+
+      <div id="chatReplyBox" class="p-3 human-chat-box" style="display:none; font-size: 15px; line-height: 1.6;">
+        <div class="text-secondary small mb-1">Human Reply:</div>
+        <div id="chatReplyText" class="text-light fw-semibold"></div>
+      </div>
+    </div>
+
+    <!-- OpenRouter & AI Key Settings -->
     <div class="card p-3 mb-4 border-primary">
       <div class="d-flex justify-content-between align-items-center mb-2">
-        <h6 class="fw-bold text-primary mb-0"><i class="fa-solid fa-network-wired me-2"></i>OpenRouter AI (DeepSeek / Llama / Gemini)</h6>
-        <a href="https://openrouter.ai/keys" target="_blank" class="btn btn-sm btn-outline-primary fw-bold">
-          <i class="fa-solid fa-key me-1"></i> OpenRouter Keys
-        </a>
+        <h6 class="fw-bold text-primary mb-0"><i class="fa-solid fa-key me-2"></i>OpenRouter AI Key Settings</h6>
+        <a href="https://openrouter.ai/keys" target="_blank" class="btn btn-sm btn-outline-primary fw-bold">OpenRouter Keys</a>
       </div>
       <div class="row g-2 mb-2">
         <div class="col-md-7">
-          <input type="password" id="openrouterKeyInput" class="form-control bg-dark text-light border-secondary" placeholder="Paste your OpenRouter Key (sk-or-v1-...)...">
+          <input type="password" id="openrouterKeyInput" class="form-control bg-dark text-light border-secondary" placeholder="Paste OpenRouter Key (sk-or-v1-...)...">
         </div>
         <div class="col-md-5">
           <select id="openrouterModelSelect" class="form-select bg-dark text-light border-secondary">
-            <option value="deepseek/deepseek-chat">DeepSeek V3 (deepseek/deepseek-chat)</option>
-            <option value="deepseek/deepseek-r1">DeepSeek R1 (deepseek/deepseek-r1)</option>
-            <option value="meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B (meta-llama/llama-3.3-70b-instruct)</option>
+            <option value="deepseek/deepseek-chat">DeepSeek V3 (Recommended)</option>
+            <option value="meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B</option>
+            <option value="deepseek/deepseek-r1">DeepSeek R1</option>
             <option value="openai/gpt-4o-mini">OpenAI GPT-4o-mini</option>
           </select>
         </div>
       </div>
       <div class="d-flex justify-content-end">
-        <button class="btn btn-primary fw-bold" onclick="saveOpenRouterKey()"><i class="fa-solid fa-floppy-disk me-1"></i> Save OpenRouter Key</button>
+        <button class="btn btn-primary fw-bold" onclick="saveOpenRouterKey()"><i class="fa-solid fa-floppy-disk me-1"></i> Save Key</button>
       </div>
-      <div id="openrouterAlert" class="small mt-2" style="display:none;"></div>
-    </div>
-
-    <!-- Live AI Q&A & Research Simulator -->
-    <div class="card p-3 mb-4">
-      <h6 class="fw-bold text-warning mb-2"><i class="fa-solid fa-comments me-2"></i>Ask AI Market Research Question (Live Web Test)</h6>
-      <div class="input-group mb-2">
-        <input type="text" id="aiQuestionInput" class="form-control bg-dark text-light border-secondary" placeholder="e.g. Reliance share buy karu ya sell?, PE ratio kya hai?, Best dividend stocks..." value="Reliance share me invest karna kaisa rahega?">
-        <button class="btn btn-warning fw-bold text-dark" onclick="askAiQuestion()"><i class="fa-solid fa-brain me-1"></i> Ask AI</button>
-      </div>
-      <div id="aiAnswerBox" class="p-3 bg-dark rounded border border-secondary" style="display:none; white-space: pre-wrap; font-family: monospace; font-size: 13px; max-height: 250px; overflow-y: auto;"></div>
-    </div>
-
-    <!-- Quick Stock Tickers -->
-    <div class="card p-3 mb-4">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <h6 class="fw-bold text-success mb-0"><i class="fa-solid fa-bolt me-2"></i>Quick Stock Search & Live Technical Analysis</h6>
-        <span class="text-secondary small">Click any stock</span>
-      </div>
-      <div class="mb-3">
-        <span class="stock-tag" onclick="testStock('RELIANCE')">RELIANCE</span>
-        <span class="stock-tag" onclick="testStock('TATAMOTORS')">TATA MOTORS</span>
-        <span class="stock-tag" onclick="testStock('TCS')">TCS</span>
-        <span class="stock-tag" onclick="testStock('HDFCBANK')">HDFC BANK</span>
-        <span class="stock-tag" onclick="testStock('SUZLON')">SUZLON</span>
-        <span class="stock-tag" onclick="testStock('ZOMATO')">ZOMATO</span>
-        <span class="stock-tag" onclick="testStock('INFY')">INFOSYS</span>
-        <span class="stock-tag" onclick="testStock('ITC')">ITC</span>
-        <span class="stock-tag" onclick="testStock('NIFTY 50')">NIFTY 50</span>
-        <span class="stock-tag" onclick="testStock('BANKNIFTY')">BANK NIFTY</span>
-        <span class="stock-tag" onclick="testStock('GOLD')">GOLD</span>
-        <span class="stock-tag" onclick="testStock('BTC')">BITCOIN</span>
-      </div>
-      <div class="input-group">
-        <input type="text" id="testInput" class="form-control bg-dark text-light border-secondary" placeholder="Enter stock symbol (e.g. SBIN, TATASTEEL, MARUTI, AAPL)..." value="RELIANCE">
-        <button class="btn btn-info fw-bold" onclick="runTest()"><i class="fa-solid fa-magnifying-glass me-1"></i> Analyze Stock</button>
-      </div>
-      <div id="stockOutput" class="mt-3 p-3 bg-dark rounded border border-secondary" style="display:none; white-space: pre-wrap; font-family: monospace; font-size: 13px; max-height: 260px; overflow-y: auto;"></div>
+      <div id="keyAlert" class="small mt-2" style="display:none;"></div>
     </div>
 
     <!-- Live Activity Logs -->
     <div class="card p-3">
       <h5 class="fw-bold text-light mb-3"><i class="fa-solid fa-clock-rotate-left me-2"></i>Live Activity Logs</h5>
       <div id="logsContainer" style="max-height: 250px; overflow-y: auto; font-family: monospace; font-size: 13px;">
-        <div class="text-muted">Listening for incoming stock queries...</div>
+        <div class="text-muted">Listening for incoming WhatsApp messages...</div>
       </div>
     </div>
   </div>
@@ -1031,19 +727,6 @@ app.get('/', (req, res) => {
         }
         document.getElementById('queryCount').innerText = data.totalQueriesProcessed || 0;
         
-        const aiStatus = document.getElementById('aiEngineStatus');
-        if (data.hasOpenrouterKey) {
-          aiStatus.innerHTML = '<span class="text-success">🟢 OpenRouter AI Active (' + (data.openrouterModel || 'DeepSeek') + ')</span>';
-        } else if (data.hasGeminiKey) {
-          aiStatus.innerHTML = '<span class="text-success">🟢 Google Gemini AI Active</span>';
-        } else if (data.hasOpenAiKey) {
-          aiStatus.innerHTML = '<span class="text-success">🟢 OpenAI Active</span>';
-        } else if (data.hasGroqKey) {
-          aiStatus.innerHTML = '<span class="text-success">🟢 Groq AI Active</span>';
-        } else {
-          aiStatus.innerHTML = '<span class="text-warning">⚡ Built-in Market Intelligence</span>';
-        }
-
         if (data.recentLogs && data.recentLogs.length > 0) {
           document.getElementById('logsContainer').innerHTML = data.recentLogs.map(function(l) {
             return '<div class="py-1 border-bottom border-secondary border-opacity-25"><span class="text-secondary">[' + l.time + ']</span> ' + l.text + '</div>';
@@ -1060,7 +743,7 @@ app.get('/', (req, res) => {
       
       if (!phoneInput) {
         errBox.style.display = 'block';
-        errBox.innerText = 'Please enter your phone number.';
+        errBox.innerText = 'Please enter phone number.';
         return;
       }
 
@@ -1079,7 +762,7 @@ app.get('/', (req, res) => {
           codeDisplay.innerText = data.code;
         } else {
           errBox.style.display = 'block';
-          errBox.innerText = data.error || data.message || 'Failed to generate pairing code. Please try again.';
+          errBox.innerText = data.error || data.message || 'Failed to generate code. Try again in 5s.';
           resBox.style.display = 'none';
         }
       } catch (e) {
@@ -1089,14 +772,34 @@ app.get('/', (req, res) => {
       }
     }
 
+    async function sendTestChat() {
+      const q = document.getElementById('testMsgInput').value.trim();
+      if (!q) return;
+      const box = document.getElementById('chatReplyBox');
+      const replyEl = document.getElementById('chatReplyText');
+      box.style.display = 'block';
+      replyEl.innerText = 'Typing... (thinking naturally)';
+      try {
+        const res = await fetch('/api/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: q })
+        });
+        const data = await res.json();
+        replyEl.innerText = data.answer || 'Haan bhai bol.';
+      } catch (e) {
+        replyEl.innerText = 'Error: ' + e.message;
+      }
+    }
+
     async function saveOpenRouterKey() {
       const key = document.getElementById('openrouterKeyInput').value.trim();
       const model = document.getElementById('openrouterModelSelect').value;
-      const alertBox = document.getElementById('openrouterAlert');
+      const alertBox = document.getElementById('keyAlert');
       if (!key) {
         alertBox.style.display = 'block';
         alertBox.className = 'small mt-2 text-danger';
-        alertBox.innerText = 'Please paste a valid OpenRouter API Key (starts with sk-or-...).';
+        alertBox.innerText = 'Please paste a valid key.';
         return;
       }
       try {
@@ -1108,59 +811,12 @@ app.get('/', (req, res) => {
         const d = await res.json();
         alertBox.style.display = 'block';
         alertBox.className = 'small mt-2 text-success';
-        alertBox.innerText = '✅ OpenRouter Key (' + model + ') saved successfully! Live AI Research is active.';
+        alertBox.innerText = '✅ Key saved successfully!';
         updateStatus();
       } catch (e) {
         alertBox.style.display = 'block';
         alertBox.className = 'small mt-2 text-danger';
-        alertBox.innerText = 'Error saving key: ' + e.message;
-      }
-    }
-
-    async function askAiQuestion() {
-      const q = document.getElementById('aiQuestionInput').value.trim();
-      if (!q) return;
-      const box = document.getElementById('aiAnswerBox');
-      box.style.display = 'block';
-      box.innerText = '🤖 AI is analyzing market data and generating research response...';
-      try {
-        const res = await fetch('/api/ask', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question: q })
-        });
-        const data = await res.json();
-        if (data.answer) {
-          box.innerText = data.answer;
-        } else {
-          box.innerText = 'No answer generated.';
-        }
-      } catch (e) {
-        box.innerText = 'Error: ' + e.message;
-      }
-    }
-    
-    async function testStock(sym) {
-      document.getElementById('testInput').value = sym;
-      runTest();
-    }
-
-    async function runTest() {
-      const q = document.getElementById('testInput').value.trim();
-      if (!q) return;
-      const out = document.getElementById('stockOutput');
-      out.style.display = 'block';
-      out.innerText = '🔍 Fetching live AI technical report for ' + q + '...';
-      try {
-        const res = await fetch('/api/stock?q=' + encodeURIComponent(q));
-        const data = await res.json();
-        if (data.report) {
-          out.innerText = data.report;
-        } else {
-          out.innerText = '❌ Stock not found or data unavailable for ' + q;
-        }
-      } catch (e) {
-        out.innerText = '⚠️ Error: ' + e.message;
+        alertBox.innerText = 'Error: ' + e.message;
       }
     }
 
@@ -1174,8 +830,8 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
   console.log(`
 ======================================================
-🌐 AI Stock Research Dashboard: http://localhost:${PORT}
-📈 Realtime Stock Analytics & OpenRouter AI Live!
+🌐 Human Friend AI WhatsApp Bot: http://localhost:${PORT}
+⚡ 100% Real Human Persona, ~10s Delay, Service & +5% Price Engine
 ======================================================
 `);
   startWhatsAppBot();
