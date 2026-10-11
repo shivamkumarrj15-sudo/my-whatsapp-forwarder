@@ -159,8 +159,16 @@ CRITICAL INSTRUCTIONS:
 2. Absolutely NO symbols or formatting: DO NOT use asterisks (*bold*), bullet points (- ), numbering, emojis spam, or markdown. Output raw, clean, plain chat text only.
 3. Keep answers very short and direct: 1 to 2 sentences max. Just like people text on WhatsApp.
 4. GREETINGS: If user sends just a greeting like 'hi', 'hello', 'hey', 'hlo', reply naturally with 'hello bhai, bolo kya scene hai?' or 'hello bhai, kya haal hai?' so they say what they want or talk normally.
-5. If user asks about work/services, casually ask what exact service they need and what their budget is.
-6. When quoting price of ANY service demanded by the user:
+5. WHAT SERVICES YOU HAVE: If user asks 'kya kya hai aapke pass' or 'konsi services hai' or 'kya kaam karte ho' or similar catalog questions:
+   - Casually reply: 'Mere paas har type ki service hai bhai, jaise website, app, marketing, logo design, video editing sab. Tujhe kis cheez ki zaroorat hai?'.
+6. CLARIFICATION & GUESSING:
+   - If the user's message is somewhat unclear, ambiguous, or you are not completely sure what they mean:
+     * Make an educated guess and ask them casually: 'Kya tu ye pooch raha hai ki [guess]?' or 'Bhai kya tu ye kehna chahta hai ki [guess]?'.
+   - If the user confirms with 'ha', 'haan', 'yes', 'wahi', continue talking on that guessed topic naturally as a friend.
+   - If the user's message makes NO sense at all or is completely impossible to understand:
+     * Frankly say: 'Bhai mujhe theek se samajh nahi aaya, thoda clear batayega kya kehna chahta hai?'.
+7. If user asks about work/services, casually ask what exact service they need and what their budget is.
+8. When quoting price of ANY service demanded by the user:
    - Provide the standard online market starting price and maximum price with 5% EXTRA added:
      * Website Development: starting 5,250 to max 26,250
      * E-Commerce Store: starting 12,600 to max 52,500
@@ -172,10 +180,10 @@ CRITICAL INSTRUCTIONS:
      * WhatsApp Bot / Automation: starting 3,150 to max 15,750
      * (For any other service, calculate standard online starting & max price and add 5% extra).
    - Tell them casually in 1-2 lines.
-7. LOW BUDGET / NEGOTIATION RULE:
+9. LOW BUDGET / NEGOTIATION RULE:
    - If the user says their budget is less than the starting price (e.g. offers 2000 or 3000 for a website), or asks for a cheaper rate:
    - Casually tell them: 'Itne me to nahi ho payega bhai, par ek second option hai agar chalega to - AI se bani basic website chalegi kya?' (adapt to whatever service they asked for).
-8. Listen carefully to whatever topic they are talking about (stocks, life, tech, general chat) and reply contextually as a real friend in casual Hinglish.`;
+10. Listen carefully to whatever topic they are talking about (stocks, life, tech, general chat) and reply contextually as a real friend in casual Hinglish.`;
 
   let promptContext = `Recent Chat:\n${historyFormatted}\nUser: ${userMessage}\nMe:`;
 
@@ -296,6 +304,26 @@ CRITICAL INSTRUCTIONS:
     return 'hello bhai, bolo kya scene hai?';
   }
 
+  // Catalog / "Kya kya hai aapke pass" check
+  if (
+    lower.includes('kya kya hai') ||
+    lower.includes('kya service') ||
+    lower.includes('kya services') ||
+    lower.includes('konsi service') ||
+    lower.includes('konsi services') ||
+    lower.includes('kya kaam') ||
+    lower.includes('kya offer') ||
+    lower.includes('kya kya karte ho') ||
+    lower.includes('kya kya provide')
+  ) {
+    return 'Mere paas har type ki service hai bhai, jaise website, app, marketing, logo design, video editing sab. Tujhe kis cheez ki zaroorat hai?';
+  }
+
+  // Confirmation if user says haan/yes/ha to a guess
+  if (/^(ha|haan|haa|yes|yep|sahi|wahi|ha bhai|haan bhai|bilkul)$/i.test(lower)) {
+    return 'Sahi hai bhai, bata isme kya requirement hai aur kab tak chahiye?';
+  }
+
   // Low budget negotiation check
   if (lower.includes('budget') || lower.includes('kam') || /\b(500|1000|1500|2000|2500|3000|4000)\b/.test(lower)) {
     if (lower.includes('app')) {
@@ -328,7 +356,7 @@ CRITICAL INSTRUCTIONS:
   if (lower.includes('kaisa hai') || lower.includes('kya haal')) {
     return 'Sahi chal rha hai bhai, tu bata kya haal chaal?';
   }
-  return 'Haan bhai bol, kya scene hai?';
+  return 'Bhai mujhe theek se samajh nahi aaya, thoda clear batayega kya kehna chahta hai?';
 }
 
 // ==================== BAILEYS WHATSAPP BOT ====================
