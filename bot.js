@@ -601,54 +601,41 @@ app.get('/', (req, res) => {
       </div>
     </div>
 
-    <!-- WhatsApp Connection Box (Pairing Code + QR) -->
+    <!-- WhatsApp Connection Box (Both QR Scanner & Pairing Code visible together) -->
     <div class="card p-4 mb-4 border-warning" id="connectContainer">
-      <h5 class="fw-bold text-warning mb-3"><i class="fa-brands fa-whatsapp me-2"></i>Connect WhatsApp</h5>
+      <h5 class="fw-bold text-warning mb-3"><i class="fa-brands fa-whatsapp me-2"></i>Connect WhatsApp (Scan QR or Use 8-Digit Code)</h5>
       
-      <ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
-        <li class="nav-item" role="presentation">
-          <button class="nav-link active fw-bold" id="pills-pair-tab" data-bs-toggle="pill" data-bs-target="#pills-pair" type="button" role="tab"><i class="fa-solid fa-mobile-screen-button me-1"></i> 8-Digit Code (No Scanner Needed)</button>
-        </li>
-        <li class="nav-item" role="presentation">
-          <button class="nav-link fw-bold" id="pills-qr-tab" data-bs-toggle="pill" data-bs-target="#pills-qr" type="button" role="tab"><i class="fa-solid fa-qrcode me-1"></i> Scan QR Code</button>
-        </li>
-      </ul>
-
-      <div class="tab-content" id="pills-tabContent">
-        <!-- Way 1: Phone Pairing Code -->
-        <div class="tab-pane fade show active" id="pills-pair" role="tabpanel">
-          <div class="p-3 pairing-box">
-            <p class="small text-light mb-2">
-              Apna WhatsApp Phone Number daalein aur <strong>Get Pairing Code</strong> par click karein. Ye code apne phone WhatsApp me daal kar direct connect ho jayega!
-            </p>
-            <div class="input-group mb-3">
-              <span class="input-group-text bg-dark text-secondary border-secondary">+91</span>
-              <input type="text" id="phoneNumberInput" class="form-control bg-dark text-light border-secondary" placeholder="Enter 10-digit number (e.g. 8005844014)..." value="8005844014">
-              <button class="btn btn-warning fw-bold text-dark" onclick="requestPairingCode()"><i class="fa-solid fa-key me-1"></i> Get Pairing Code</button>
-            </div>
-            
-            <div id="pairingResultBox" style="display:none;" class="text-center p-3 bg-dark rounded border border-warning">
-              <div class="text-secondary small mb-1">Apne WhatsApp me ye 8-digit code daalein:</div>
-              <div id="pairingCodeDisplay" class="code-display mb-2">--------</div>
-              <div class="text-start small text-warning p-2 rounded bg-black bg-opacity-50">
-                <strong>Mobile Me Steps:</strong><br>
-                1. WhatsApp open karein ➡️ Upar <strong>3-Dots</strong> ya <strong>Settings</strong> par jayein.<br>
-                2. <strong>Linked Devices</strong> ➡️ <strong>Link a Device</strong> par click karein.<br>
-                3. Camera screen ke neeche <strong>"Link with phone number instead"</strong> par click karein.<br>
-                4. Ye 8-digit code daal dein!
-              </div>
-            </div>
-            <div id="pairError" class="small text-danger mt-2" style="display:none;"></div>
+      <div class="row g-4 align-items-center">
+        <!-- Side 1: Direct QR Code Scanner -->
+        <div class="col-md-5 text-center border-end border-secondary">
+          <h6 class="fw-bold text-light mb-2"><i class="fa-solid fa-qrcode me-1 text-warning"></i> 1. Scan QR Code</h6>
+          <div class="text-secondary small mb-2">WhatsApp ➡️ Linked Devices se scan karein:</div>
+          <div class="p-2 bg-dark rounded d-inline-block shadow">
+            <div id="qrLoading" class="text-muted small py-4">Generating QR Code...</div>
+            <img id="qrImg" src="" alt="WhatsApp QR" class="img-fluid rounded" style="max-width: 230px; display: none;">
           </div>
         </div>
 
-        <!-- Way 2: QR Scanner -->
-        <div class="tab-pane fade" id="pills-qr" role="tabpanel">
-          <div class="text-center p-3">
-            <div class="text-secondary small mb-2">WhatsApp ➡️ Linked Devices se QR Code scan karein:</div>
-            <div id="qrLoading" class="text-muted small">Generating QR Code...</div>
-            <img id="qrImg" src="" alt="WhatsApp QR" class="img-fluid rounded shadow" style="max-width: 260px; display: none;">
+        <!-- Side 2: Phone Pairing Code (Alternative) -->
+        <div class="col-md-7">
+          <h6 class="fw-bold text-light mb-2"><i class="fa-solid fa-mobile-screen-button me-1 text-info"></i> 2. Ya 8-Digit Code Se Connect Karein (Bina Scanner Ke)</h6>
+          <p class="small text-secondary mb-2">
+            Agar camera kaam nahi kar raha to apna mobile number daal kar code le lijiye:
+          </p>
+          <div class="input-group mb-2">
+            <span class="input-group-text bg-dark text-secondary border-secondary">+91</span>
+            <input type="text" id="phoneNumberInput" class="form-control bg-dark text-light border-secondary" placeholder="Enter 10-digit number (e.g. 8005844014)..." value="8005844014">
+            <button class="btn btn-warning fw-bold text-dark" onclick="requestPairingCode()"><i class="fa-solid fa-key me-1"></i> Get Code</button>
           </div>
+          
+          <div id="pairingResultBox" style="display:none;" class="p-2 bg-dark rounded border border-warning text-center">
+            <div class="text-secondary small">WhatsApp me ye code daalein:</div>
+            <div id="pairingCodeDisplay" class="code-display my-1">--------</div>
+            <div class="text-start small text-warning p-2 rounded bg-black bg-opacity-50">
+              <strong>WhatsApp ➡️ Linked Devices ➡️ Link a Device ➡️ "Link with phone number instead"</strong> par tap karke ye code daalein.
+            </div>
+          </div>
+          <div id="pairError" class="small text-danger mt-1" style="display:none;"></div>
         </div>
       </div>
     </div>
