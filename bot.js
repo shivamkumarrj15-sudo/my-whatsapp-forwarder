@@ -155,26 +155,27 @@ async function generateHumanReply(sender, userMessage) {
   const systemInstruction = `You are a real, normal human friend chatting 1-on-1 on WhatsApp.
 
 CRITICAL INSTRUCTIONS:
-1. NEVER sound like a bot, AI, customer care, or assistant. NEVER say 'Namaste! Main AI hoon' or 'Kaise madad kar sakta hoon'. Talk casually like a normal person on WhatsApp.
+1. NEVER sound like a bot, AI, customer care, or assistant. Talk casually like a normal person on WhatsApp.
 2. Absolutely NO symbols or formatting: DO NOT use asterisks (*bold*), bullet points (- ), numbering, emojis spam, or markdown. Output raw, clean, plain chat text only.
 3. Keep answers very short and direct: 1 to 2 sentences max. Just like people text on WhatsApp.
-4. If talking about any general topic (daily life, stocks, crypto, cricket, tech, banter), talk naturally about that topic as a friend.
-5. If the user mentions or asks about work or services (e.g. website, app, graphic, marketing, etc.):
-   - Ask them casually what exact service they need and what their budget is.
-6. When quoting or stating the price of ANY service demanded by the user:
-   - Provide the standard online market starting price and maximum price with 5% EXTRA added.
-   - Reference starting and max prices (+5% included):
+4. GREETINGS: If user sends just a greeting like 'hi', 'hello', 'hey', 'hlo', reply naturally with 'hello bhai, bolo kya scene hai?' or 'hello bhai, kya haal hai?' so they say what they want or talk normally.
+5. If user asks about work/services, casually ask what exact service they need and what their budget is.
+6. When quoting price of ANY service demanded by the user:
+   - Provide the standard online market starting price and maximum price with 5% EXTRA added:
      * Website Development: starting 5,250 to max 26,250
      * E-Commerce Store: starting 12,600 to max 52,500
      * Mobile App Development: starting 26,250 to max 1,05,000
      * Graphic Design / Logo: starting 1,050 to max 5,250
      * Video Editing / Reels: starting 1,575 to max 8,400
      * SEO: starting 6,300 to max 21,000
-     * Social Media Ads / Marketing: starting 7,350 to max 26,250
+     * Social Media Ads: starting 7,350 to max 26,250
      * WhatsApp Bot / Automation: starting 3,150 to max 15,750
      * (For any other service, calculate standard online starting & max price and add 5% extra).
-   - Tell them casually in 1-2 lines without sounding like an automated invoice.
-7. Tone: Match the user's language (casual Hinglish/Hindi or English).`;
+   - Tell them casually in 1-2 lines.
+7. LOW BUDGET / NEGOTIATION RULE:
+   - If the user says their budget is less than the starting price (e.g. offers 2000 or 3000 for a website), or asks for a cheaper rate:
+   - Casually tell them: 'Itne me to nahi ho payega bhai, par ek second option hai agar chalega to - AI se bani basic website chalegi kya?' (adapt to whatever service they asked for).
+8. Listen carefully to whatever topic they are talking about (stocks, life, tech, general chat) and reply contextually as a real friend in casual Hinglish.`;
 
   let promptContext = `Recent Chat:\n${historyFormatted}\nUser: ${userMessage}\nMe:`;
 
@@ -288,7 +289,27 @@ CRITICAL INSTRUCTIONS:
   }
 
   // 5. Built-in Natural Human Fallback Engine
-  const lower = userMessage.toLowerCase();
+  const lower = userMessage.toLowerCase().trim();
+
+  // Greetings check
+  if (/^(hi|hello|hey|hlo|helo|hy)\b/i.test(lower) || lower === 'hi' || lower === 'hello') {
+    return 'hello bhai, bolo kya scene hai?';
+  }
+
+  // Low budget negotiation check
+  if (lower.includes('budget') || lower.includes('kam') || /\b(500|1000|1500|2000|2500|3000|4000)\b/.test(lower)) {
+    if (lower.includes('app')) {
+      return 'Itne me to nahi ho payega bhai, par ek second option hai agar chalega to - AI ya no-code basic app chalega kya?';
+    }
+    if (lower.includes('logo') || lower.includes('graphic')) {
+      return 'Itne me to nahi ho payega bhai, par ek second option hai - AI se bana basic logo chalega kya?';
+    }
+    if (lower.includes('video') || lower.includes('reel')) {
+      return 'Itne me to nahi ho payega bhai, par ek second option hai - AI template se bani basic video chalegi kya?';
+    }
+    return 'Itne me to nahi ho payega bhai, par ek second option hai agar chalega to - AI se bani basic website chalegi kya?';
+  }
+
   if (lower.includes('website') || lower.includes('web')) {
     return 'Bhai website ka market me starting 5,250 se lekar 26,250 tak rehta hai requirements ke hisaab se. Tera kaisa plan hai aur budget kitna hai?';
   }
@@ -304,7 +325,7 @@ CRITICAL INSTRUCTIONS:
   if (lower.includes('service') || lower.includes('kaam') || lower.includes('charges') || lower.includes('price')) {
     return 'Haan bhai bata kaunsa kaam karwana hai tujhe? Aur budget kitna socha hai tune?';
   }
-  if (lower.includes('hi') || lower.includes('hello') || lower.includes('hey') || lower.includes('kaisa hai')) {
+  if (lower.includes('kaisa hai') || lower.includes('kya haal')) {
     return 'Sahi chal rha hai bhai, tu bata kya haal chaal?';
   }
   return 'Haan bhai bol, kya scene hai?';
