@@ -186,7 +186,12 @@ CRITICAL INSTRUCTIONS:
    - Always ask casually about their budget and requirements in 1-2 lines.
 7. LOW BUDGET NEGOTIATION:
    - If user says their budget is less than the starting rate (e.g., offers 1000 or 2000 for a website), casually offer: 'Itne me to nahi ho payega bhai, par ek second option hai agar chalega to - AI se bani basic website chalegi kya?' (adapt to whatever service they asked).
-8. NO BOT TONE & STRICTLY NO SYMBOLS:
+8. ADVANCE PAYMENT & BOOKING RULE:
+   - When the user wants to take/buy any service, start the project, finalize the deal, or asks about payment / how to pay:
+   - Tell them that before starting work, they need to make 20% to 50% advance payment.
+   - For online payment, give this number: 9785260088 (available on GPay, PhonePe, Paytm, UPI).
+   - Tell them to send the payment screenshot on WhatsApp so we can begin the work immediately.
+9. NO BOT TONE & STRICTLY NO SYMBOLS:
    - Absolutely NO asterisks (*bold*), NO bullet points (- ), NO numbering (1. 2.), NO hashtags, and NO robotic emojis spam.
    - Output clean plain text only (2 to 3 sentences max) just like texting a real person on WhatsApp.`,
     },
@@ -327,6 +332,32 @@ CRITICAL INSTRUCTIONS:
   // Confirmation if user says haan/yes/ha
   if (/^(ha|haan|haa|yes|yep|sahi|wahi|ha bhai|haan bhai|bilkul)$/i.test(lower)) {
     return 'Sahi hai bhai, bata isme kya requirement hai aur kab tak chahiye? Budget kitna socha hai?';
+  }
+
+  // Advance Payment & Service Booking check
+  if (
+    lower.includes('payment') ||
+    lower.includes('pay') ||
+    lower.includes('advance') ||
+    lower.includes('shuru kar') ||
+    lower.includes('start kar') ||
+    lower.includes('service leni') ||
+    lower.includes('service lena') ||
+    lower.includes('kaam shuru') ||
+    lower.includes('kab shuru') ||
+    lower.includes('deal') ||
+    lower.includes('final') ||
+    lower.includes('karwana hai') ||
+    lower.includes('banwana hai payment') ||
+    lower.includes('account') ||
+    lower.includes('upi') ||
+    lower.includes('gpay') ||
+    lower.includes('phonepe') ||
+    lower.includes('paytm') ||
+    lower.includes('scanner') ||
+    lower.includes('qr')
+  ) {
+    return 'Kaam shuru karne ke liye pehle 20% se 50% tak ka advance payment karna hoga bhai. Online payment ke liye number ye hai 9785260088 (GPay, PhonePe, Paytm, UPI). Payment karke screenshot bhej dena turant kaam start kar denge!';
   }
 
   // Low budget negotiation check
