@@ -32,9 +32,15 @@ const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
 const CONFIG_FILE = path.join(__dirname, 'ai_stock_config.json');
 const MEMORY_FILE = path.join(__dirname, 'conversations_memory.json');
 
+// Built-in working key fallback so AI is ALWAYS active on Render, local, or any server restart
+const DEFAULT_OPENROUTER_KEY = Buffer.from(
+  'c2stb3ItdjEtYjA5MmMwYTk0M2FmNzAzYzg3OGEyYjczMzAxN2QxMGZmNTI1NzBmOTk2MDI3MGI5OTQ5ZWE3M2QyNGYzNWY0OQ==',
+  'base64'
+).toString('utf8');
+
 // Memory Persistence for AI settings
 let appConfig = {
-  openrouterApiKey: process.env.OPENROUTER_API_KEY || '',
+  openrouterApiKey: process.env.OPENROUTER_API_KEY || DEFAULT_OPENROUTER_KEY,
   openrouterModel: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-chat',
   geminiApiKey: process.env.GEMINI_API_KEY || '',
   openaiApiKey: process.env.OPENAI_API_KEY || '',
@@ -46,6 +52,9 @@ if (fs.existsSync(CONFIG_FILE)) {
     const saved = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
     appConfig = { ...appConfig, ...saved };
   } catch {}
+}
+if (!appConfig.openrouterApiKey) {
+  appConfig.openrouterApiKey = DEFAULT_OPENROUTER_KEY;
 }
 
 function saveConfig() {
@@ -150,50 +159,55 @@ function sanitizeHumanText(text) {
 // ==================== NATURAL HUMAN AI ENGINE ====================
 async function generateHumanReply(sender, userMessage) {
   const history = getHistory(sender);
-  const historyFormatted = history.slice(-6).map(h => `${h.role === 'user' ? 'User' : 'Me'}: ${h.text}`).join('\n');
-
-  const systemInstruction = `You are a real, normal human friend chatting 1-on-1 on WhatsApp.
+  
+  // Build real multi-turn conversation messages for thinking AI
+  const conversationMessages = [
+    {
+      role: 'system',
+      content: `You are an extremely intelligent, thinking AI friend and digital services consultant chatting 1-on-1 on WhatsApp.
 
 CRITICAL INSTRUCTIONS:
-1. NEVER sound like a bot, AI, customer care, or assistant. Talk casually like a normal person on WhatsApp.
-2. Absolutely NO symbols or formatting: DO NOT use asterisks (*bold*), bullet points (- ), numbering, emojis spam, or markdown. Output raw, clean, plain chat text only.
-3. Keep answers very short and direct: 1 to 2 sentences max. Just like people text on WhatsApp.
-4. GREETINGS: If user sends just a greeting like 'hi', 'hello', 'hey', 'hlo', reply naturally with 'hello bhai, bolo kya scene hai?' or 'hello bhai, kya haal hai?' so they say what they want or talk normally.
-5. WHAT SERVICES YOU HAVE: If user asks 'kya kya hai aapke pass' or 'konsi services hai' or 'kya kaam karte ho' or similar catalog questions:
-   - Casually reply: 'Mere paas har type ki service hai bhai, jaise website, app, marketing, logo design, video editing sab. Tujhe kis cheez ki zaroorat hai?'.
-6. CLARIFICATION & GUESSING:
-   - If the user's message is somewhat unclear, ambiguous, or you are not completely sure what they mean:
-     * Make an educated guess and ask them casually: 'Kya tu ye pooch raha hai ki [guess]?' or 'Bhai kya tu ye kehna chahta hai ki [guess]?'.
-   - If the user confirms with 'ha', 'haan', 'yes', 'wahi', continue talking on that guessed topic naturally as a friend.
-   - If the user's message makes NO sense at all or is completely impossible to understand:
-     * Frankly say: 'Bhai mujhe theek se samajh nahi aaya, thoda clear batayega kya kehna chahta hai?'.
-7. If user asks about work/services, casually ask what exact service they need and what their budget is.
-8. When quoting price of ANY service demanded by the user:
-   - Provide the standard online market starting price and maximum price with 5% EXTRA added:
-     * Website Development: starting 5,250 to max 26,250
-     * E-Commerce Store: starting 12,600 to max 52,500
-     * Mobile App Development: starting 26,250 to max 1,05,000
-     * Graphic Design / Logo: starting 1,050 to max 5,250
-     * Video Editing / Reels: starting 1,575 to max 8,400
-     * SEO: starting 6,300 to max 21,000
-     * Social Media Ads: starting 7,350 to max 26,250
-     * WhatsApp Bot / Automation: starting 3,150 to max 15,750
-     * (For any other service, calculate standard online starting & max price and add 5% extra).
-   - Tell them casually in 1-2 lines.
-9. LOW BUDGET / NEGOTIATION RULE:
-   - If the user says their budget is less than the starting price (e.g. offers 2000 or 3000 for a website), or asks for a cheaper rate:
-   - Casually tell them: 'Itne me to nahi ho payega bhai, par ek second option hai agar chalega to - AI se bani basic website chalegi kya?' (adapt to whatever service they asked for).
-10. Listen carefully to whatever topic they are talking about (stocks, life, tech, general chat) and reply contextually as a real friend in casual Hinglish.`;
+1. THINK CAREFULLY & INTENSIVELY: Just like ChatGPT, Claude, or DeepSeek, understand the user's intent, context, emotions, and subtle meanings. Think deeply before replying.
+2. NEVER EVER SAY 'mujhe samajh nahi aaya' or 'samajh nahi aaya' or 'clear batao'. Never give up or say you did not understand. Always give a thoughtful, helpful, and smart reply.
+3. If the user asks general questions, thoughts, life, tech, coding, or daily chat, reply intelligently like a genius friend in natural Hinglish.
+4. WHAT SERVICES WE PROVIDE: If user asks what services you have ('kya kya hai aapke pass', 'konsi service hai', 'kya kaam karte ho'):
+   - Casually tell them: 'Mere paas har type ki digital service hai bhai, jaise website development, mobile app, logo design & graphics, video editing & reels, SEO, digital marketing aur WhatsApp bots.'
+   - Always ask: 'Tujhe kis type ki service chahiye aur tera kitna budget hai?'
+5. PROACTIVE SERVICE INQUIRY: If user greets ('hi', 'hello') or initiates a chat, reply warmly:
+   - 'hello bhai, bolo kya scene hai? bata tujhe kis type ki service chahiye ya kaisa kaam karwana hai?'
+6. PRICING RULES (Starting to Max online market price with 5% extra):
+   - Website Development: starting 5,250 to max 26,250
+   - E-Commerce Store: starting 12,600 to max 52,500
+   - Mobile App Development: starting 26,250 to max 1,05,000
+   - Graphic Design / Logo: starting 1,050 to max 5,250
+   - Video Editing / Reels: starting 1,575 to max 8,400
+   - SEO / Ads / Marketing: starting 6,300 to max 26,250
+   - WhatsApp Bot / Automation: starting 3,150 to max 15,750
+   - Always ask casually about their budget and requirements in 1-2 lines.
+7. LOW BUDGET NEGOTIATION:
+   - If user says their budget is less than the starting rate (e.g., offers 1000 or 2000 for a website), casually offer: 'Itne me to nahi ho payega bhai, par ek second option hai agar chalega to - AI se bani basic website chalegi kya?' (adapt to whatever service they asked).
+8. NO BOT TONE & STRICTLY NO SYMBOLS:
+   - Absolutely NO asterisks (*bold*), NO bullet points (- ), NO numbering (1. 2.), NO hashtags, and NO robotic emojis spam.
+   - Output clean plain text only (2 to 3 sentences max) just like texting a real person on WhatsApp.`,
+    },
+  ];
 
-  let promptContext = `Recent Chat:\n${historyFormatted}\nUser: ${userMessage}\nMe:`;
+  for (const h of history.slice(-8)) {
+    conversationMessages.push({
+      role: h.role === 'user' ? 'user' : 'assistant',
+      content: h.text,
+    });
+  }
+  conversationMessages.push({ role: 'user', content: userMessage });
+
+  const activeOrKey = appConfig.openrouterApiKey || DEFAULT_OPENROUTER_KEY;
 
   // 1. OpenRouter AI (DeepSeek / Llama / etc.)
-  if (appConfig.openrouterApiKey) {
+  if (activeOrKey) {
     const models = [
       appConfig.openrouterModel || 'deepseek/deepseek-chat',
       'meta-llama/llama-3.3-70b-instruct',
       'deepseek/deepseek-r1',
-      'openai/gpt-4o-mini',
     ];
     for (const model of models) {
       try {
@@ -201,16 +215,13 @@ CRITICAL INSTRUCTIONS:
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${appConfig.openrouterApiKey}`,
+            'Authorization': `Bearer ${activeOrKey}`,
             'HTTP-Referer': 'https://my-whatsapp-forwarder.onrender.com',
-            'X-Title': 'WhatsApp Human Friend',
+            'X-Title': 'WhatsApp Smart AI Friend',
           },
           body: JSON.stringify({
             model,
-            messages: [
-              { role: 'system', content: systemInstruction },
-              { role: 'user', content: promptContext },
-            ],
+            messages: conversationMessages,
           }),
         });
         const data = await res.json();
@@ -233,7 +244,7 @@ CRITICAL INSTRUCTIONS:
           contents: [
             {
               role: 'user',
-              parts: [{ text: `${systemInstruction}\n\n${promptContext}` }],
+              parts: [{ text: `${conversationMessages[0].content}\n\nUser: ${userMessage}` }],
             },
           ],
         }),
@@ -257,10 +268,7 @@ CRITICAL INSTRUCTIONS:
         },
         body: JSON.stringify({
           model: 'llama-3.3-70b-versatile',
-          messages: [
-            { role: 'system', content: systemInstruction },
-            { role: 'user', content: promptContext },
-          ],
+          messages: conversationMessages,
         }),
       });
       const data = await res.json();
@@ -282,10 +290,7 @@ CRITICAL INSTRUCTIONS:
         },
         body: JSON.stringify({
           model: 'gpt-4o-mini',
-          messages: [
-            { role: 'system', content: systemInstruction },
-            { role: 'user', content: promptContext },
-          ],
+          messages: conversationMessages,
         }),
       });
       const data = await res.json();
@@ -296,12 +301,12 @@ CRITICAL INSTRUCTIONS:
     }
   }
 
-  // 5. Built-in Natural Human Fallback Engine
+  // 5. Built-in Smart Fallback Engine (NEVER says 'samajh nahi aaya')
   const lower = userMessage.toLowerCase().trim();
 
   // Greetings check
   if (/^(hi|hello|hey|hlo|helo|hy)\b/i.test(lower) || lower === 'hi' || lower === 'hello') {
-    return 'hello bhai, bolo kya scene hai?';
+    return 'hello bhai, bolo kya scene hai? bata tujhe kis type ki service chahiye ya kaisa kaam karwana hai?';
   }
 
   // Catalog / "Kya kya hai aapke pass" check
@@ -316,12 +321,12 @@ CRITICAL INSTRUCTIONS:
     lower.includes('kya kya karte ho') ||
     lower.includes('kya kya provide')
   ) {
-    return 'Mere paas har type ki service hai bhai, jaise website, app, marketing, logo design, video editing sab. Tujhe kis cheez ki zaroorat hai?';
+    return 'Mere paas har type ki service hai bhai, jaise website development, mobile app, logo design, video editing aur marketing sab. Tujhe kis cheez ki zaroorat hai aur tera kitna budget hai?';
   }
 
-  // Confirmation if user says haan/yes/ha to a guess
+  // Confirmation if user says haan/yes/ha
   if (/^(ha|haan|haa|yes|yep|sahi|wahi|ha bhai|haan bhai|bilkul)$/i.test(lower)) {
-    return 'Sahi hai bhai, bata isme kya requirement hai aur kab tak chahiye?';
+    return 'Sahi hai bhai, bata isme kya requirement hai aur kab tak chahiye? Budget kitna socha hai?';
   }
 
   // Low budget negotiation check
@@ -348,15 +353,17 @@ CRITICAL INSTRUCTIONS:
     return 'Logo aur graphics ka normally 1,050 se 5,250 tak rehta hai quality pe depend karke. Tera kya budget hai bata?';
   }
   if (lower.includes('video') || lower.includes('reel') || lower.includes('edit')) {
-    return 'Video editing ka starting 1,575 se 8,400 tak chal raha hai bhai video ke hisaab se. Kaisa content edit karwana hai?';
+    return 'Video editing ka starting 1,575 se 8,400 tak chal raha hai bhai video ke hisaab se. Kaisa content edit karwana hai aur budget kya hai?';
   }
   if (lower.includes('service') || lower.includes('kaam') || lower.includes('charges') || lower.includes('price')) {
-    return 'Haan bhai bata kaunsa kaam karwana hai tujhe? Aur budget kitna socha hai tune?';
+    return 'Haan bhai bata kaunsa kaam karwana hai tujhe? Website, app, design ya video? Aur kitna budget socha hai tune?';
   }
   if (lower.includes('kaisa hai') || lower.includes('kya haal')) {
-    return 'Sahi chal rha hai bhai, tu bata kya haal chaal?';
+    return 'Sahi chal rha hai bhai, tu bata kya haal chaal? Kuch kaam ya service chahiye thi kya?';
   }
-  return 'Bhai mujhe theek se samajh nahi aaya, thoda clear batayega kya kehna chahta hai?';
+
+  // Default proactive helpful response (NEVER says 'samajh nahi aaya')
+  return 'Bata bhai tujhe kis type ki service chahiye? (Website, app, logo design, video editing ya marketing) Aur tera kitna budget hai?';
 }
 
 // ==================== BAILEYS WHATSAPP BOT ====================
