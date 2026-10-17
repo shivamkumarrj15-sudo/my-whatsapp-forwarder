@@ -79,6 +79,39 @@ function saveConversations() {
   } catch {}
 }
 
+// Leads Storage (Captured names, numbers & confirmed deals)
+const LEADS_FILE = path.join(__dirname, 'leads.json');
+let leads = [];
+if (fs.existsSync(LEADS_FILE)) {
+  try {
+    leads = JSON.parse(fs.readFileSync(LEADS_FILE, 'utf8'));
+    if (!Array.isArray(leads)) leads = [];
+  } catch {
+    leads = [];
+  }
+}
+
+function saveLead(leadData) {
+  try {
+    const p = leadData.phone || leadData.senderPhone;
+    const existingIndex = leads.findIndex(l => (l.phone && l.phone === p) || (l.senderPhone && l.senderPhone === p));
+    if (existingIndex >= 0) {
+      leads[existingIndex] = { ...leads[existingIndex], ...leadData, updatedAt: new Date().toISOString() };
+    } else {
+      leads.unshift({
+        ...leadData,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    if (leads.length > 200) leads = leads.slice(0, 200);
+    fs.writeFileSync(LEADS_FILE, JSON.stringify(leads, null, 2), 'utf8');
+    console.log(`📋 Lead Saved/Updated: ${leadData.name || 'Client'} (${p})`);
+    addLog('lead', `Lead captured: ${leadData.name || 'Client'} (${p})`);
+  } catch (err) {
+    console.error('Error saving lead:', err.message);
+  }
+}
+
 function getHistory(sender) {
   if (!conversations[sender]) conversations[sender] = [];
   return conversations[sender];
@@ -191,7 +224,16 @@ CRITICAL INSTRUCTIONS:
    - Tell them that before starting work, they need to make 20% to 50% advance payment.
    - For online payment, give this number: 9785260088 (available on GPay, PhonePe, Paytm, UPI).
    - Tell them to send the payment screenshot on WhatsApp so we can begin the work immediately.
-9. NO BOT TONE & STRICTLY NO SYMBOLS:
+9. SERVICE DONE / LEAD DETAILS & BOSS VERIFICATION CALL RULE (VERY IMPORTANT):
+   - Whenever the user confirms or says service done ('service done', 'deal done', 'final hai', 'kaam done hai', 'haan kar do', 'start karo', 'advance bhej raha hu'):
+     * IMMEDIATELY ask for their Name and Contact Number so your boss can verify:
+       'Sahi hai bhai, deal done! Ek baar apna Name aur Contact Number yahan share kar do taaki mere boss verify kar sakein.'
+     * Give the boss call confirmation option:
+       'Aur agar aap call karke confirm karna chahte ho to is number par call kar sakte ho: 9785260088. Par pehle apna name aur contact no yahan de dena taaki mere boss verify kar sakein.'
+     * Remind them about 20% to 50% advance payment on 9785260088.
+   - When the user shares their Name and Contact Number:
+     * Acknowledge warmly: 'Thank you bhai, aapka name aur number note kar liya hai! Mere boss verify karke turant confirm karenge. Aap 9785260088 par call bhi kar sakte ho.'
+10. NO BOT TONE & STRICTLY NO SYMBOLS:
    - Absolutely NO asterisks (*bold*), NO bullet points (- ), NO numbering (1. 2.), NO hashtags, and NO robotic emojis spam.
    - Output clean plain text only (2 to 3 sentences max) just like texting a real person on WhatsApp.`,
     },
@@ -334,6 +376,47 @@ CRITICAL INSTRUCTIONS:
     return 'Sahi hai bhai, bata isme kya requirement hai aur kab tak chahiye? Budget kitna socha hai?';
   }
 
+  // Service Done / Final Deal & Boss Verification check
+  if (
+    lower.includes('service done') ||
+    lower.includes('done hai') ||
+    lower.includes('deal done') ||
+    lower.includes('deal pakki') ||
+    lower.includes('final hai') ||
+    lower.includes('final kar do') ||
+    lower.includes('final kr do') ||
+    lower.includes('start kar do') ||
+    lower.includes('shuru kar do') ||
+    lower.includes('kar do bhai') ||
+    lower.includes('advance bhej raha') ||
+    lower.includes('advance bhej diya')
+  ) {
+    return 'Sahi hai bhai, deal done! Ek baar apna Name aur Contact Number yahan share kar do taaki mere boss verify kar sakein. Aur agar aap call karke confirm karna chahte ho to is number par call kar sakte ho: 9785260088 (par pehle apna name aur contact no yahan de dena taaki boss verify kar sakein). Aur 20% se 50% tak advance payment 9785260088 par bhej kar screenshot de dena!';
+  }
+
+  // Call Confirmation check
+  if (
+    lower.includes('call karke') ||
+    lower.includes('call karna') ||
+    lower.includes('call pe') ||
+    lower.includes('phone pe baat') ||
+    lower.includes('calling') ||
+    lower.includes('call confirm')
+  ) {
+    return 'Haan bhai bilkul, aap 9785260088 par call karke confirm kar sakte ho! Par pehle apna Name aur Contact Number yahan de dena taaki mere boss verify kar sakein.';
+  }
+
+  // Customer sharing Name or Contact Number check
+  if (
+    /\b[6-9]\d{9}\b/.test(lower) ||
+    lower.includes('mera naam') ||
+    lower.includes('naam mera') ||
+    lower.includes('my name is') ||
+    lower.includes('number hai')
+  ) {
+    return 'Thank you bhai, aapka name aur contact number note kar liya hai! Mere boss verify karke aapse connect kar lenge. Confirmation ke liye aap 9785260088 par call bhi kar sakte ho.';
+  }
+
   // Advance Payment & Service Booking check
   if (
     lower.includes('payment') ||
@@ -425,6 +508,22 @@ function enqueueHumanReply(remoteJid, senderPhone, incomingText) {
       messageQueues.delete(remoteJid);
 
       appendHistory(senderPhone, 'user', combinedText);
+
+      // Check and save lead if they provided contact info or confirmed service
+      const phoneMatch = combinedText.match(/\b([6-9]\d{9})\b/);
+      const nameMatch = combinedText.match(/(?:naam|name)\s*(?:hai|is)?\s*([a-zA-Z\s]{2,25})/i);
+      const isConfirmed = /(service done|done hai|final|deal|advance|kar do|bana do)/i.test(combinedText);
+
+      if (phoneMatch || nameMatch || isConfirmed) {
+        saveLead({
+          name: nameMatch ? nameMatch[1].trim() : '',
+          phone: phoneMatch ? phoneMatch[1] : senderPhone,
+          senderPhone: senderPhone,
+          status: isConfirmed ? 'Service Confirmed / Waiting Boss Verification' : 'Lead Inquired',
+          notes: combinedText,
+        });
+      }
+
       console.log(`\n⏳ Simulating human typing presence for +${senderPhone}...`);
 
       // Start WhatsApp typing status (composing)
@@ -585,6 +684,13 @@ app.get('/api/status', (req, res) => {
     hasGeminiKey: !!appConfig.geminiApiKey,
     hasOpenAiKey: !!appConfig.openaiApiKey,
     hasGroqKey: !!appConfig.groqApiKey,
+  });
+});
+
+app.get('/api/leads', (req, res) => {
+  res.json({
+    total: leads.length,
+    leads,
   });
 });
 
