@@ -112,6 +112,75 @@ function saveLead(leadData) {
   }
 }
 
+// Calendar Events Storage (Meetings, Classes, Gym, Appointments)
+const CALENDAR_FILE = path.join(__dirname, 'calendar_events.json');
+let calendarEvents = [];
+if (fs.existsSync(CALENDAR_FILE)) {
+  try {
+    calendarEvents = JSON.parse(fs.readFileSync(CALENDAR_FILE, 'utf8'));
+    if (!Array.isArray(calendarEvents)) calendarEvents = [];
+  } catch {
+    calendarEvents = [];
+  }
+}
+
+function saveCalendarEvent(eventData) {
+  try {
+    const id = 'evt_' + Date.now();
+    const newEvent = {
+      id,
+      title: eventData.title || 'Scheduled Event',
+      type: eventData.type || 'Event',
+      timing: eventData.timing || 'Upcoming',
+      senderPhone: eventData.senderPhone || '',
+      notes: eventData.notes || '',
+      createdAt: new Date().toISOString(),
+    };
+    calendarEvents.unshift(newEvent);
+    if (calendarEvents.length > 200) calendarEvents = calendarEvents.slice(0, 200);
+    fs.writeFileSync(CALENDAR_FILE, JSON.stringify(calendarEvents, null, 2), 'utf8');
+    console.log(`📅 Calendar Event Saved: "${newEvent.title}" (${newEvent.timing}) from +${newEvent.senderPhone}`);
+    addLog('calendar', `Scheduled: ${newEvent.title} (${newEvent.timing})`);
+    return newEvent;
+  } catch (err) {
+    console.error('Error saving calendar event:', err.message);
+    return null;
+  }
+}
+
+function generateIcsFeed() {
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//WhatsApp Assistant Calendar//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'X-WR-CALNAME:WhatsApp Schedule (Classes, Meetings, Gym)',
+    'X-WR-TIMEZONE:Asia/Kolkata',
+  ];
+
+  for (const evt of calendarEvents) {
+    const createdDate = new Date(evt.createdAt || Date.now());
+    const fmt = d => d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const dtstamp = fmt(createdDate);
+    const dtstart = fmt(createdDate);
+    const dtend = fmt(new Date(createdDate.getTime() + 60 * 60 * 1000));
+
+    lines.push('BEGIN:VEVENT');
+    lines.push(`UID:${evt.id || Date.now()}@whatsapp-assistant`);
+    lines.push(`DTSTAMP:${dtstamp}`);
+    lines.push(`DTSTART:${dtstart}`);
+    lines.push(`DTEND:${dtend}`);
+    lines.push(`SUMMARY:${(evt.title || 'WhatsApp Event').replace(/\n/g, ' ')}`);
+    lines.push(`DESCRIPTION:${(evt.timing || evt.notes || 'Scheduled via WhatsApp').replace(/\n/g, ' ')}`);
+    lines.push('STATUS:CONFIRMED');
+    lines.push('END:VEVENT');
+  }
+
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}
+
 function getHistory(sender) {
   if (!conversations[sender]) conversations[sender] = [];
   return conversations[sender];
@@ -233,9 +302,18 @@ CRITICAL INSTRUCTIONS:
      * Remind them about 20% to 50% advance payment on 9785260088.
    - When the user shares their Name and Contact Number:
      * Acknowledge warmly: 'Thank you bhai, aapka name aur number note kar liya hai! Mere boss verify karke turant confirm karenge. Aap 9785260088 par call bhi kar sakte ho.'
-10. NO BOT TONE & STRICTLY NO SYMBOLS:
-   - Absolutely NO asterisks (*bold*), NO bullet points (- ), NO numbering (1. 2.), NO hashtags, and NO robotic emojis spam.
-   - Output clean plain text only (2 to 3 sentences max) just like texting a real person on WhatsApp.`,
+10. CALENDAR & EVENT SCHEDULING (MEETINGS, CLASSES, GYM, APPOINTMENTS, CALLS):
+    - When someone mentions scheduling or attending an event, meeting, class, gym, workout, appointment, or call:
+      (e.g., 'kal 4 baje meeting hai', 'class hai Monday ko', 'gym jana hai shaam 6 baje', 'appointment schedule kar do', 'call par baat karni hai'):
+      * Understand the event type (Meeting, Class, Gym, Call, etc.), date, and time.
+      * Confirm warmly and casually:
+        'Haan bhai, maine schedule kar diya hai: [Event Name] [Date/Time]. Calendar me fix ho gaya hai!'
+      * If time or date is missing, casually ask: 'Bhai kaunse din aur kitne baje ka schedule rakhna hai?'
+      * If they ask how to connect or sync their calendar, tell them:
+        'Aap apne Google Calendar me hamare iCal link (/calendar.ics) se 1-click me connect kar sakte ho, jisse saare events seedhe phone me sync ho jayenge!'
+11. NO BOT TONE & STRICTLY NO SYMBOLS:
+    - Absolutely NO asterisks (*bold*), NO bullet points (- ), NO numbering (1. 2.), NO hashtags, and NO robotic emojis spam.
+    - Output clean plain text only (2 to 3 sentences max) just like texting a real person on WhatsApp.`,
     },
   ];
 
@@ -417,6 +495,20 @@ CRITICAL INSTRUCTIONS:
     return 'Thank you bhai, aapka name aur contact number note kar liya hai! Mere boss verify karke aapse connect kar lenge. Confirmation ke liye aap 9785260088 par call bhi kar sakte ho.';
   }
 
+  // Calendar Event Scheduling check (Meeting, Class, Gym, Workout, etc.)
+  if (
+    lower.includes('meeting') ||
+    lower.includes('class') ||
+    lower.includes('gym') ||
+    lower.includes('workout') ||
+    lower.includes('appointment') ||
+    lower.includes('tuition') ||
+    lower.includes('tution') ||
+    lower.includes('call schedule')
+  ) {
+    return 'Haan bhai, maine schedule kar diya hai aur calendar me fix kar diya hai! Agar time ya date me koi change karna ho to bata dena.';
+  }
+
   // Advance Payment & Service Booking check
   if (
     lower.includes('payment') ||
@@ -520,6 +612,20 @@ function enqueueHumanReply(remoteJid, senderPhone, incomingText) {
           phone: phoneMatch ? phoneMatch[1] : senderPhone,
           senderPhone: senderPhone,
           status: isConfirmed ? 'Service Confirmed / Waiting Boss Verification' : 'Lead Inquired',
+          notes: combinedText,
+        });
+      }
+
+      // Check and save calendar event if meeting, class, gym, etc. is mentioned
+      const eventKeywords = /(meeting|class|gym|workout|appointment|interview|call schedule|zoom|tuition|tution|doctor)/i;
+      if (eventKeywords.test(combinedText)) {
+        const typeMatch = combinedText.match(eventKeywords);
+        const eventType = typeMatch ? typeMatch[1].toUpperCase() : 'MEETING';
+        saveCalendarEvent({
+          title: `${eventType} with +${senderPhone}`,
+          type: eventType,
+          timing: combinedText,
+          senderPhone: senderPhone,
           notes: combinedText,
         });
       }
@@ -691,6 +797,23 @@ app.get('/api/leads', (req, res) => {
   res.json({
     total: leads.length,
     leads,
+  });
+});
+
+app.get('/calendar.ics', (req, res) => {
+  res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+  res.setHeader('Content-Disposition', 'inline; filename="whatsapp-calendar.ics"');
+  res.send(generateIcsFeed());
+});
+
+app.get('/api/calendar', (req, res) => {
+  const host = req.get('host');
+  const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+  res.json({
+    total: calendarEvents.length,
+    events: calendarEvents,
+    syncLink: `${protocol}://${host}/calendar.ics`,
+    googleCalendarSubscribeUrl: `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(`${protocol}://${host}/calendar.ics`)}`,
   });
 });
 
@@ -874,6 +997,23 @@ app.get('/', (req, res) => {
       <div id="keyAlert" class="small mt-2" style="display:none;"></div>
     </div>
 
+    <!-- WhatsApp Calendar & Scheduled Events (Classes, Meetings, Gym) -->
+    <div class="card p-3 mb-4 border-success">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="fw-bold text-success mb-0"><i class="fa-solid fa-calendar-days me-2"></i>WhatsApp Scheduled Events (Classes, Meetings, Gym)</h6>
+        <div>
+          <a id="gcalSyncBtn" href="#" target="_blank" class="btn btn-sm btn-success fw-bold me-1"><i class="fa-brands fa-google me-1"></i> Sync Google Calendar</a>
+          <button class="btn btn-sm btn-outline-light" onclick="copyIcsLink()"><i class="fa-solid fa-link me-1"></i> Copy iCal Link</button>
+        </div>
+      </div>
+      <p class="text-secondary small mb-2">
+        WhatsApp par aane wale sabhi meetings, classes aur gym schedules yahan note hote hain aur Google Calendar me 1-click se sync ho jaate hain.
+      </p>
+      <div id="eventsContainer" class="p-2 bg-dark rounded border border-secondary" style="max-height: 180px; overflow-y: auto;">
+        <div class="text-muted small">No scheduled events yet. Messages mentioning meetings, classes, or gym will appear here.</div>
+      </div>
+    </div>
+
     <!-- Live Activity Logs -->
     <div class="card p-3">
       <h5 class="fw-bold text-light mb-3"><i class="fa-solid fa-clock-rotate-left me-2"></i>Live Activity Logs</h5>
@@ -1000,8 +1140,40 @@ app.get('/', (req, res) => {
       }
     }
 
+    async function loadCalendarEvents() {
+      try {
+        const res = await fetch('/api/calendar');
+        const data = await res.json();
+        const gcalBtn = document.getElementById('gcalSyncBtn');
+        if (gcalBtn && data.googleCalendarSubscribeUrl) {
+          gcalBtn.href = data.googleCalendarSubscribeUrl;
+        }
+        window.currentIcsUrl = data.syncLink;
+        const box = document.getElementById('eventsContainer');
+        if (data.events && data.events.length > 0) {
+          box.innerHTML = data.events.map(function(e) {
+            return '<div class="d-flex justify-content-between align-items-center py-2 border-bottom border-secondary border-opacity-25">' +
+              '<div><span class="badge bg-primary me-2">' + (e.type || 'EVENT') + '</span>' +
+              '<strong class="text-light">' + e.title + '</strong>' +
+              '<div class="small text-secondary">' + (e.timing || e.notes || '') + '</div></div>' +
+              '<div><a href="https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(e.title) + '&details=' + encodeURIComponent(e.timing || e.notes || '') + '" target="_blank" class="btn btn-sm btn-outline-success"><i class="fa-brands fa-google me-1"></i> Add to Calendar</a></div>' +
+              '</div>';
+          }).join('');
+        }
+      } catch {}
+    }
+
+    function copyIcsLink() {
+      const url = window.currentIcsUrl || (window.location.origin + '/calendar.ics');
+      navigator.clipboard.writeText(url).then(function() {
+        alert('Copied Calendar iCal Link!\n\nTo connect Google Calendar on phone/PC:\n1. Open Google Calendar (calendar.google.com)\n2. Other Calendars (+) -> "From URL"\n3. Paste this link and save!');
+      });
+    }
+
     setInterval(updateStatus, 3000);
     updateStatus();
+    setInterval(loadCalendarEvents, 5000);
+    loadCalendarEvents();
   </script>
 </body>
 </html>`);
