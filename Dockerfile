@@ -12,8 +12,10 @@ COPY package*.json ./
 # Install only production dependencies
 RUN npm install --omit=dev --ignore-scripts --no-audit
 
-# Copy bot code
+# Copy bot code and service configuration
 COPY bot.js ./
+COPY services_engine.js ./
+COPY services_config.json ./
 
 # Create data directory for persistent auth state
 RUN mkdir -p auth_info_baileys
