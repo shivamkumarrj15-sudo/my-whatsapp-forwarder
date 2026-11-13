@@ -242,6 +242,7 @@ function isDuplicate(msgId, text, sender) {
 function sanitizeHumanText(text) {
   if (!text) return '';
   let cleaned = text
+    .replace(/<think>[\s\S]*?<\/think>/gi, '') // remove reasoning tags
     .replace(/[*_#~`]/g, '') // remove markdown symbols (*, _, #, ~, `)
     .replace(/^[•\-\*]\s+/gm, '') // remove bullet points
     .replace(/\b(Namaste|Hello|Hi),\s*(main|mein)\s*.*?(hoon|hu)\b/gi, '')
@@ -266,54 +267,55 @@ async function generateHumanReply(sender, userMessage) {
   const conversationMessages = [
     {
       role: 'system',
-      content: `You are an extremely intelligent, thinking AI friend and digital services consultant chatting 1-on-1 on WhatsApp.
+      content: `You are a polite, professional, and intelligent Website Consultant and Client Advisor chatting 1-on-1 on WhatsApp.
 
 CRITICAL INSTRUCTIONS:
-1. THINK CAREFULLY & INTENSIVELY: Just like ChatGPT, Claude, or DeepSeek, understand the user's intent, context, emotions, and subtle meanings. Think deeply before replying.
-2. NEVER EVER SAY 'mujhe samajh nahi aaya' or 'samajh nahi aaya' or 'clear batao'. Never give up or say you did not understand. Always give a thoughtful, helpful, and smart reply.
-3. If the user asks general questions, thoughts, life, tech, coding, or daily chat, reply intelligently like a genius friend in natural Hinglish.
-4. WHAT SERVICES WE PROVIDE: If user asks what services you have ('kya kya hai aapke pass', 'konsi service hai', 'kya kaam karte ho'):
-   - Casually tell them: 'Mere paas har type ki digital service hai bhai, jaise website development, mobile app, logo design & graphics, video editing & reels, SEO, digital marketing aur WhatsApp bots.'
-   - Always ask: 'Tujhe kis type ki service chahiye aur tera kitna budget hai?'
-5. PROACTIVE SERVICE INQUIRY: If user greets ('hi', 'hello') or initiates a chat, reply warmly:
-   - 'hello bhai, bolo kya scene hai? bata tujhe kis type ki service chahiye ya kaisa kaam karwana hai?'
-6. PRICING RULES (Starting to Max online market price with 5% extra):
-   - Website Development: starting 5,250 to max 26,250
-   - E-Commerce Store: starting 12,600 to max 52,500
-   - Mobile App Development: starting 26,250 to max 1,05,000
-   - Graphic Design / Logo: starting 1,050 to max 5,250
-   - Video Editing / Reels: starting 1,575 to max 8,400
-   - SEO / Ads / Marketing: starting 6,300 to max 26,250
-   - WhatsApp Bot / Automation: starting 3,150 to max 15,750
-   - Always ask casually about their budget and requirements in 1-2 lines.
-7. LOW BUDGET NEGOTIATION:
-   - If user says their budget is less than the starting rate (e.g., offers 1000 or 2000 for a website), casually offer: 'Itne me to nahi ho payega bhai, par ek second option hai agar chalega to - AI se bani basic website chalegi kya?' (adapt to whatever service they asked).
-8. ADVANCE PAYMENT & BOOKING RULE:
-   - When the user wants to take/buy any service, start the project, finalize the deal, or asks about payment / how to pay:
-   - Tell them that before starting work, they need to make 20% to 50% advance payment.
-   - For online payment, give this number: 9785260088 (available on GPay, PhonePe, Paytm, UPI).
-   - Tell them to send the payment screenshot on WhatsApp so we can begin the work immediately.
-9. SERVICE DONE / LEAD DETAILS & BOSS VERIFICATION CALL RULE (VERY IMPORTANT):
-   - Whenever the user confirms or says service done ('service done', 'deal done', 'final hai', 'kaam done hai', 'haan kar do', 'start karo', 'advance bhej raha hu'):
-     * IMMEDIATELY ask for their Name and Contact Number so your boss can verify:
-       'Sahi hai bhai, deal done! Ek baar apna Name aur Contact Number yahan share kar do taaki mere boss verify kar sakein.'
-     * Give the boss call confirmation option:
-       'Aur agar aap call karke confirm karna chahte ho to is number par call kar sakte ho: 9785260088. Par pehle apna name aur contact no yahan de dena taaki mere boss verify kar sakein.'
-     * Remind them about 20% to 50% advance payment on 9785260088.
-   - When the user shares their Name and Contact Number:
-     * Acknowledge warmly: 'Thank you bhai, aapka name aur number note kar liya hai! Mere boss verify karke turant confirm karenge. Aap 9785260088 par call bhi kar sakte ho.'
-10. CALENDAR & EVENT SCHEDULING (MEETINGS, CLASSES, GYM, APPOINTMENTS, CALLS):
-    - When someone mentions scheduling or attending an event, meeting, class, gym, workout, appointment, or call:
-      (e.g., 'kal 4 baje meeting hai', 'class hai Monday ko', 'gym jana hai shaam 6 baje', 'appointment schedule kar do', 'call par baat karni hai'):
-      * Understand the event type (Meeting, Class, Gym, Call, etc.), date, and time.
-      * Confirm warmly and casually:
-        'Haan bhai, maine schedule kar diya hai: [Event Name] [Date/Time]. Calendar me fix ho gaya hai!'
-      * If time or date is missing, casually ask: 'Bhai kaunse din aur kitne baje ka schedule rakhna hai?'
-      * If they ask how to connect or sync their calendar, tell them:
-        'Aap apne Google Calendar me hamare iCal link (/calendar.ics) se 1-click me connect kar sakte ho, jisse saare events seedhe phone me sync ho jayenge!'
-11. NO BOT TONE & STRICTLY NO SYMBOLS:
-    - Absolutely NO asterisks (*bold*), NO bullet points (- ), NO numbering (1. 2.), NO hashtags, and NO robotic emojis spam.
-    - Output clean plain text only (2 to 3 sentences max) just like texting a real person on WhatsApp.`,
+1. PROFESSIONAL & POLITE TONE:
+   - Talk respectfully, warmly, and professionally (use polite Hindi/Hinglish like 'aap', 'ji', 'kaise hain aap', friendly yet business-professional).
+   - Do NOT use cheap slang (avoid 'bolo kya scene hai', 'kya cheez ki zaroorat hai', aggressive questions).
+   - Talk like an experienced, thoughtful web consultant who genuinely listens.
+
+2. GRADUAL CONVERSATION FLOW (NO AGGRESSIVE DUMPS):
+   - When user sends a greeting like 'Hi', 'Hello', 'Hey', 'Namaste':
+     Reply smoothly, warmly, and politely:
+     'Hello ji! Kaise hain aap? Kahiye, website ke regarding kya inquiry thi aapki?' or 'Hello! Kaise hain aap? Boliye, kaise help kar sakta hu aapki?'
+   - Do NOT immediately dump pricing or bombard them with questions in the first greeting. Start the conversation gradually and naturally.
+
+3. THINK & ANALYZE DEEPLY:
+   - Carefully read and analyze the user's actual message, context, and intent.
+   - Do NOT copy-paste rigid templates or dump pre-written scripts.
+   - Flow the conversation strictly according to what the client is saying.
+
+4. EXCLUSIVE FOCUS - ONLY WEBSITE DEVELOPMENT SERVICES:
+   - We sell ONLY Website Services. DO NOT mention or sell apps, logo design, video editing, social media ads, gym, classes or any other service.
+   - What Website Services We Provide:
+     * Business & Corporate Websites (company profile, services, about, contact)
+     * E-Commerce Stores (Online shop, product catalog, cart, payments)
+     * Portfolio & Personal Websites (doctors, advocates, creators, consultants)
+     * Landing Pages & Lead Generation Websites
+     * Key Features: Modern clean UI design, 100% mobile-friendly on all devices, fast loading, WhatsApp chat & call button, contact inquiry form, domain & hosting guidance.
+   - If asked what services you provide: Explain that we specialize exclusively in professional Website Development (Business websites, E-commerce stores, Portfolios, Landing pages) and ask what type of website they are planning.
+
+5. WEBSITE PRICING:
+   - Website starting price starts from 5,250 (Basic professional website starts from 5,250 to 15,000; dynamic / e-commerce websites start 15,000 to 26,250 depending on requirements).
+   - Explain politely that starting is 5,250 and ask what kind of website they have in mind.
+   - If user has a lower budget (e.g. 2000-3000):
+     Politely explain that custom development starts at 5,250, but we can offer a basic starter website option within their budget.
+
+6. ADVANCE PAYMENT & BOOKING:
+   - When client confirms or wants to start the website project:
+     * 20% to 50% advance payment is required to start the work.
+     * Online payment number: 9785260088 (available on GPay, PhonePe, Paytm, UPI).
+     * Ask them to share the payment screenshot on WhatsApp so work begins immediately.
+
+7. CALL CONFIRMATION & BOSS VERIFICATION:
+   - When user confirms the service or says they want to talk on call:
+     * Ask for their Name and Contact Number so the boss can verify.
+     * Tell them they can call on 9785260088 for confirmation.
+
+8. FORMATTING & CLEAN TEXT:
+   - Absolutely NO asterisks (*bold*), NO bullet points (- ), NO numbering (1. 2.), NO hashtags, and NO robot emojis spam.
+   - Pure, clean, professional plain text (2 to 3 sentences max) just like texting on WhatsApp.`,
     },
   ];
 
@@ -327,12 +329,14 @@ CRITICAL INSTRUCTIONS:
 
   const activeOrKey = appConfig.openrouterApiKey || DEFAULT_OPENROUTER_KEY;
 
-  // 1. OpenRouter AI (DeepSeek / Llama / etc.)
+  // 1. OpenRouter AI (Nemotron / Liquid / DeepSeek / Llama)
   if (activeOrKey) {
     const models = [
-      appConfig.openrouterModel || 'deepseek/deepseek-chat',
+      appConfig.openrouterModel || 'nvidia/nemotron-3.5-lightning:free',
+      'nvidia/nemotron-3.5-lightning:free',
+      'liquid/lfm-2.5-2.6b:free',
+      'deepseek/deepseek-chat',
       'meta-llama/llama-3.3-70b-instruct',
-      'deepseek/deepseek-r1',
     ];
     for (const model of models) {
       try {
@@ -342,11 +346,13 @@ CRITICAL INSTRUCTIONS:
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${activeOrKey}`,
             'HTTP-Referer': 'https://my-whatsapp-forwarder.onrender.com',
-            'X-Title': 'WhatsApp Smart AI Friend',
+            'X-Title': 'WhatsApp Professional Website Advisor',
           },
           body: JSON.stringify({
             model,
             messages: conversationMessages,
+            max_tokens: 500,
+            include_reasoning: false,
           }),
         });
         const data = await res.json();
@@ -429,12 +435,12 @@ CRITICAL INSTRUCTIONS:
   // 5. Built-in Smart Fallback Engine (NEVER says 'samajh nahi aaya')
   const lower = userMessage.toLowerCase().trim();
 
-  // Greetings check
-  if (/^(hi|hello|hey|hlo|helo|hy)\b/i.test(lower) || lower === 'hi' || lower === 'hello') {
-    return 'hello bhai, bolo kya scene hai? bata tujhe kis type ki service chahiye ya kaisa kaam karwana hai?';
+  // Greetings check (Gradual, polite, professional start)
+  if (/^(hi|hello|hey|hlo|helo|hy|namaste)\b/i.test(lower) || lower === 'hi' || lower === 'hello') {
+    return 'Hello ji! Kaise hain aap? Kahiye, website ke regarding kya inquiry thi aapki?';
   }
 
-  // Catalog / "Kya kya hai aapke pass" check
+  // Catalog / "Kya kya hai aapke pass" / Services check
   if (
     lower.includes('kya kya hai') ||
     lower.includes('kya service') ||
@@ -446,12 +452,12 @@ CRITICAL INSTRUCTIONS:
     lower.includes('kya kya karte ho') ||
     lower.includes('kya kya provide')
   ) {
-    return 'Mere paas har type ki service hai bhai, jaise website development, mobile app, logo design, video editing aur marketing sab. Tujhe kis cheez ki zaroorat hai aur tera kitna budget hai?';
+    return 'Hum exclusively professional Website Development services provide karte hain ji, jaise Business websites, E-commerce stores, Portfolio aur Landing pages. Aapko kis type ki website banwani hai?';
   }
 
   // Confirmation if user says haan/yes/ha
-  if (/^(ha|haan|haa|yes|yep|sahi|wahi|ha bhai|haan bhai|bilkul)$/i.test(lower)) {
-    return 'Sahi hai bhai, bata isme kya requirement hai aur kab tak chahiye? Budget kitna socha hai?';
+  if (/^(ha|haan|haa|yes|yep|sahi|wahi|ha bhai|haan bhai|bilkul|ji haan|ji)$/i.test(lower)) {
+    return 'Ji bilkul, aap apne business ya website ki requirements thoda share karenge to main aapko best structure aur details suggest kar sakta hu.';
   }
 
   // Service Done / Final Deal & Boss Verification check
@@ -465,11 +471,11 @@ CRITICAL INSTRUCTIONS:
     lower.includes('final kr do') ||
     lower.includes('start kar do') ||
     lower.includes('shuru kar do') ||
-    lower.includes('kar do bhai') ||
+    lower.includes('kar do') ||
     lower.includes('advance bhej raha') ||
     lower.includes('advance bhej diya')
   ) {
-    return 'Sahi hai bhai, deal done! Ek baar apna Name aur Contact Number yahan share kar do taaki mere boss verify kar sakein. Aur agar aap call karke confirm karna chahte ho to is number par call kar sakte ho: 9785260088 (par pehle apna name aur contact no yahan de dena taaki boss verify kar sakein). Aur 20% se 50% tak advance payment 9785260088 par bhej kar screenshot de dena!';
+    return 'Deal done ji! Ek baar apna Name aur Contact Number yahan share kar dijiye taaki mere boss verify kar sakein. Aur agar aap call karke confirm karna chahte hain to is number par call kar sakte hain: 9785260088 (pehle name aur number yahan de dijiyega taaki boss verify kar sakein). Kaam shuru karne ke liye 20% se 50% advance payment 9785260088 par send karke screenshot share kar dijiye.';
   }
 
   // Call Confirmation check
@@ -481,7 +487,7 @@ CRITICAL INSTRUCTIONS:
     lower.includes('calling') ||
     lower.includes('call confirm')
   ) {
-    return 'Haan bhai bilkul, aap 9785260088 par call karke confirm kar sakte ho! Par pehle apna Name aur Contact Number yahan de dena taaki mere boss verify kar sakein.';
+    return 'Ji bilkul, aap 9785260088 par call karke confirm kar sakte hain. Bas pehle apna Name aur Contact Number yahan share kar dijiye taaki mere boss verify kar sakein.';
   }
 
   // Customer sharing Name or Contact Number check
@@ -492,21 +498,7 @@ CRITICAL INSTRUCTIONS:
     lower.includes('my name is') ||
     lower.includes('number hai')
   ) {
-    return 'Thank you bhai, aapka name aur contact number note kar liya hai! Mere boss verify karke aapse connect kar lenge. Confirmation ke liye aap 9785260088 par call bhi kar sakte ho.';
-  }
-
-  // Calendar Event Scheduling check (Meeting, Class, Gym, Workout, etc.)
-  if (
-    lower.includes('meeting') ||
-    lower.includes('class') ||
-    lower.includes('gym') ||
-    lower.includes('workout') ||
-    lower.includes('appointment') ||
-    lower.includes('tuition') ||
-    lower.includes('tution') ||
-    lower.includes('call schedule')
-  ) {
-    return 'Haan bhai, maine schedule kar diya hai aur calendar me fix kar diya hai! Agar time ya date me koi change karna ho to bata dena.';
+    return 'Thank you ji, aapka name aur contact number note kar liya hai! Mere boss verify karke aapse jald hi connect karenge. Confirmation ke liye aap 9785260088 par call bhi kar sakte hain.';
   }
 
   // Advance Payment & Service Booking check
@@ -532,44 +524,49 @@ CRITICAL INSTRUCTIONS:
     lower.includes('scanner') ||
     lower.includes('qr')
   ) {
-    return 'Kaam shuru karne ke liye pehle 20% se 50% tak ka advance payment karna hoga bhai. Online payment ke liye number ye hai 9785260088 (GPay, PhonePe, Paytm, UPI). Payment karke screenshot bhej dena turant kaam start kar denge!';
+    return 'Website ka kaam start karne ke liye 20% se 50% advance payment required hota hai ji. Online payment ke liye number hai 9785260088 (GPay, PhonePe, Paytm, UPI). Payment karke screenshot share kar dijiye, hum turant work initiate kar denge.';
+  }
+
+  // Website details / features check
+  if (
+    lower.includes('website details') ||
+    lower.includes('kya kya milega') ||
+    lower.includes('features') ||
+    lower.includes('kya features') ||
+    lower.includes('website me kya')
+  ) {
+    return 'Hamari websites 100% mobile responsive aur fast loading hoti hain, modern UI design, WhatsApp chat button, call now button, direct contact form aur complete domain-hosting setup ke saath milti hain. Aapko kis type ki website chahiye?';
   }
 
   // Low budget negotiation check
   if (lower.includes('budget') || lower.includes('kam') || /\b(500|1000|1500|2000|2500|3000|4000)\b/.test(lower)) {
-    if (lower.includes('app')) {
-      return 'Itne me to nahi ho payega bhai, par ek second option hai agar chalega to - AI ya no-code basic app chalega kya?';
-    }
-    if (lower.includes('logo') || lower.includes('graphic')) {
-      return 'Itne me to nahi ho payega bhai, par ek second option hai - AI se bana basic logo chalega kya?';
-    }
-    if (lower.includes('video') || lower.includes('reel')) {
-      return 'Itne me to nahi ho payega bhai, par ek second option hai - AI template se bani basic video chalegi kya?';
-    }
-    return 'Itne me to nahi ho payega bhai, par ek second option hai agar chalega to - AI se bani basic website chalegi kya?';
+    return 'Hamari professional custom website ka starting price 5,250 se shuru hota hai ji. Lekin agar aapka budget limited hai, to hum aapke liye ek basic starter website customize kar sakte hain. Aapka estimated budget kitna hai?';
+  }
+
+  // Pricing check
+  if (
+    lower.includes('price') ||
+    lower.includes('rate') ||
+    lower.includes('cost') ||
+    lower.includes('charge') ||
+    lower.includes('charges') ||
+    lower.includes('kitna lagega') ||
+    lower.includes('kitne me') ||
+    lower.includes('starting')
+  ) {
+    return 'Website development ka starting price 5,250 se hota hai ji. Basic professional website 5,250 se 15,000 tak aur dynamic ya e-commerce websites 15,000 se 26,250 tak hoti hain. Aapko kis tarah ki website banwani hai?';
   }
 
   if (lower.includes('website') || lower.includes('web')) {
-    return 'Bhai website ka market me starting 5,250 se lekar 26,250 tak rehta hai requirements ke hisaab se. Tera kaisa plan hai aur budget kitna hai?';
+    return 'Hamare yahan custom business websites, e-commerce stores, portfolio aur landing pages develop kiye jate hain, starting from 5,250. Aap apne business ke baare me batayein, kaisi website plan kar rahe hain aap?';
   }
-  if (lower.includes('app') || lower.includes('application')) {
-    return 'App ka starting lagbhag 26,250 se 1,05,000 tak jata hai features ke hisaab se. Tujhe kis type ka app banwana hai aur budget kya hai?';
-  }
-  if (lower.includes('logo') || lower.includes('graphic') || lower.includes('design')) {
-    return 'Logo aur graphics ka normally 1,050 se 5,250 tak rehta hai quality pe depend karke. Tera kya budget hai bata?';
-  }
-  if (lower.includes('video') || lower.includes('reel') || lower.includes('edit')) {
-    return 'Video editing ka starting 1,575 se 8,400 tak chal raha hai bhai video ke hisaab se. Kaisa content edit karwana hai aur budget kya hai?';
-  }
-  if (lower.includes('service') || lower.includes('kaam') || lower.includes('charges') || lower.includes('price')) {
-    return 'Haan bhai bata kaunsa kaam karwana hai tujhe? Website, app, design ya video? Aur kitna budget socha hai tune?';
-  }
+
   if (lower.includes('kaisa hai') || lower.includes('kya haal')) {
-    return 'Sahi chal rha hai bhai, tu bata kya haal chaal? Kuch kaam ya service chahiye thi kya?';
+    return 'Main badhiya hu ji, aap suniye kaise hain? Website ke regarding kaise help kar sakta hu aapki?';
   }
 
   // Default proactive helpful response (NEVER says 'samajh nahi aaya')
-  return 'Bata bhai tujhe kis type ki service chahiye? (Website, app, logo design, video editing ya marketing) Aur tera kitna budget hai?';
+  return 'Hello ji! Hum exclusively professional Website Development services provide karte hain, starting from 5,250. Kahiye, aapko kis type ki website banwani hai?';
 }
 
 // ==================== BAILEYS WHATSAPP BOT ====================
