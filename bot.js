@@ -678,6 +678,40 @@ app.post('/api/services', (req, res) => {
   res.json({ success: true, message: 'Services config updated successfully!', config: servicesEngine.getServices() });
 });
 
+// Dedicated Direct PNG QR Image Endpoint
+app.get('/api/qr', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  const raw = botState.qrRaw;
+  if (raw) {
+    try {
+      const buffer = await QRCode.toBuffer(raw, {
+        width: 320,
+        margin: 2,
+        color: {
+          dark: '#000000',
+          light: '#ffffff',
+        },
+      });
+      res.setHeader('Content-Type', 'image/png');
+      return res.send(buffer);
+    } catch (e) {
+      console.error('QR buffer generation error:', e.message);
+    }
+  }
+
+  try {
+    const msg = botState.status === 'connected' ? 'WhatsApp Connected' : 'Waiting for WhatsApp QR...';
+    const buffer = await QRCode.toBuffer(msg, { width: 320, margin: 2 });
+    res.setHeader('Content-Type', 'image/png');
+    return res.send(buffer);
+  } catch {
+    res.status(404).send('QR code not ready');
+  }
+});
+
 // Live Test Chat Endpoint
 app.post('/api/ask', async (req, res) => {
   const { question } = req.body;
@@ -750,11 +784,12 @@ app.get('/', (req, res) => {
         <div class="col-md-5 text-center border-end border-secondary">
           <h6 class="fw-bold text-light mb-2"><i class="fa-solid fa-qrcode me-1 text-warning"></i> 1. Scan QR Code</h6>
           <div class="text-secondary small mb-2">WhatsApp ➡️ Linked Devices se scan karein:</div>
-          <div class="p-3 bg-white rounded d-inline-block shadow text-center" style="min-width: 240px; min-height: 240px; display: inline-flex; align-items: center; justify-content: center;">
-            <div id="qrLoading" class="text-dark fw-bold py-4">
-              <div class="spinner-border text-primary mb-2"></div><br>Generating QR Code...
-            </div>
-            <img id="qrImg" src="" alt="WhatsApp QR" class="img-fluid rounded" style="max-width: 220px; display: none;">
+          <div class="p-3 bg-white rounded d-inline-block shadow text-center" style="min-width: 260px; min-height: 260px;">
+            <img id="qrImg" src="/api/qr" alt="WhatsApp QR" class="img-fluid rounded" style="max-width: 240px; display: block; margin: 0 auto;">
+          </div>
+          <div class="mt-2">
+            <button class="btn btn-sm btn-outline-warning me-1" onclick="refreshQR()"><i class="fa-solid fa-arrows-rotate me-1"></i> Refresh QR</button>
+            <a href="/api/qr" target="_blank" class="btn btn-sm btn-warning fw-bold text-dark"><i class="fa-solid fa-expand me-1"></i> Fullscreen QR</a>
           </div>
         </div>
 
@@ -851,6 +886,11 @@ app.get('/', (req, res) => {
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
+    function refreshQR() {
+      const img = document.getElementById('qrImg');
+      if (img) img.src = '/api/qr?t=' + Date.now();
+    }
+
     async function updateStatus() {
       try {
         const res = await fetch('/api/status');
