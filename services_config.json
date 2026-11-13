@@ -1,0 +1,207 @@
+{
+  "system": {
+    "version": "2.0.0",
+    "name": "AI Service Sales Agent",
+    "active_services": [
+      "web_development",
+      "performance_marketing"
+    ],
+    "max_concurrent_services_pitch": 2,
+    "payment_info": {
+      "advance_percentage_min": 20,
+      "advance_percentage_max": 50,
+      "payment_number": "9785260088",
+      "payment_methods": [
+        "GPay",
+        "PhonePe",
+        "Paytm",
+        "UPI"
+      ],
+      "verification_phone": "9785260088"
+    }
+  },
+  "initial_menu": {
+    "hinglish": "Hello ji! Hum businesses ko grow karne ke liye 2 focused services provide karte hain:\n\n1. Web Development (Professional business website, 100% mobile responsive, fast loading, WhatsApp/contact integration)\n2. Performance Marketing (Google aur Meta ads campaign setup, targeted audience reach aur regular leads)\n\nAapko inme se kis cheez me zyada interest hai — Website ya Performance Marketing?",
+    "english": "Hello! We help businesses grow through 2 core services:\n\n1. Web Development (Professional business website, mobile responsive design, fast loading, WhatsApp/contact integration)\n2. Performance Marketing (Google & Meta ads campaign setup, targeted audience reach, quality lead generation)\n\nWhich of these are you more interested in — Website or Performance Marketing?"
+  },
+  "services": [
+    {
+      "id": "web_development",
+      "name": "Web Development",
+      "short_name": "Website",
+      "tagline": "Professional business website that builds trust and drives customer inquiries",
+      "description": "Custom, modern, and mobile-friendly websites designed for doctors, local businesses, professionals, and service providers.",
+      "features": [
+        "Professional business website",
+        "Mobile responsive design (looks great on phones, tablets & desktops)",
+        "Basic SEO setup for Google search presence",
+        "Direct Contact and WhatsApp chat integration",
+        "Basic business information and service/about pages",
+        "Fast loading speed & modern clean layout"
+      ],
+      "suitable_for": [
+        "Doctors and clinics",
+        "Local businesses and shops",
+        "Consultants and professionals",
+        "Service providers and agencies"
+      ],
+      "starting_price": 5000,
+      "max_example_price": 10000,
+      "pricing_rules": {
+        "simple": {
+          "label": "Simple Website",
+          "price_range": "₹5,000 – ₹6,500",
+          "min": 5000,
+          "max": 6500,
+          "criteria": "1-3 pages, essential business info, contact/WhatsApp button, clean mobile layout"
+        },
+        "medium": {
+          "label": "Medium Website",
+          "price_range": "₹6,500 – ₹8,000",
+          "min": 6500,
+          "max": 8000,
+          "criteria": "4-6 pages, dedicated service sections, contact form, custom branding, SEO basics"
+        },
+        "advanced": {
+          "label": "Advanced Website",
+          "price_range": "₹8,000 – ₹10,000",
+          "min": 8000,
+          "max": 10000,
+          "criteria": "Multi-page dynamic structure, custom inquiry workflow, premium UI/UX, advanced SEO and analytics"
+        }
+      },
+      "qualification_questions": [
+        "Aapka business kis type ka hai (clinic, shop, consultancy ya local service)?",
+        "Kya aapke paas pehle se koi website bani hui hai ya bilkul nayi banwani hai?",
+        "Aapko website me roughly kitne pages ya specific sections chahiye honge?"
+      ],
+      "objection_handling": {
+        "already_have_website": {
+          "angle": "Redesign, Speed & Conversion OR Performance Marketing",
+          "guidance": "Do not force a new website. Politely check if their current site is mobile-friendly and fast, OR offer Performance Marketing to drive targeted traffic to their existing site!"
+        },
+        "price_too_high": {
+          "angle": "Highlight inclusions and offer starter package",
+          "guidance": "Explain what is included (mobile UI, WhatsApp button, hosting setup) and offer a clean starter package within ₹5,000 without compromising quality."
+        },
+        "not_needed_now": {
+          "angle": "Polite open-ended stay in touch",
+          "guidance": "Respect their timeline warmly, let them know we are available whenever they plan to expand digital presence."
+        },
+        "send_details": {
+          "angle": "Concise customized summary",
+          "guidance": "Share a 3-bullet customized overview specific to their business type instead of dumping a generic brochure."
+        }
+      },
+      "process_steps": [
+        "Step 1: Requirement discussion",
+        "Step 2: Website structure & design mockup",
+        "Step 3: Development & integration",
+        "Step 4: Client review & feedback",
+        "Step 5: Final polish & changes",
+        "Step 6: Official launch & handover"
+      ],
+      "proposal_template": {
+        "recommended_service": "Web Development",
+        "deliverables": [
+          "Professional business website",
+          "Mobile responsive layout",
+          "WhatsApp & call integration",
+          "Contact form & service showcase",
+          "Basic SEO setup"
+        ],
+        "timeline": "3 to 5 working days",
+        "process": "Requirement → Design → Development → Review → Launch"
+      }
+    },
+    {
+      "id": "performance_marketing",
+      "name": "Performance Marketing",
+      "short_name": "Ads & Marketing",
+      "tagline": "Data-driven Google & Meta ad campaigns that generate genuine customer inquiries",
+      "description": "Targeted paid advertising on Meta (Facebook/Instagram) and Google Ads designed to bring quality leads and phone calls for your business.",
+      "features": [
+        "Google & Meta advertising support",
+        "Complete campaign setup & ad account structure",
+        "Precise audience and local geo-targeting",
+        "Ad creative & copy optimization",
+        "Daily performance monitoring & budget management",
+        "Transparent weekly/basic performance reporting"
+      ],
+      "suitable_for": [
+        "Local service businesses looking for daily calls/leads",
+        "Clinics and healthcare specialists needing patient appointments",
+        "Real estate and high-ticket service consultants",
+        "Businesses with an existing website wanting direct traffic"
+      ],
+      "starting_price": 5000,
+      "max_example_price": 8000,
+      "pricing_rules": {
+        "simple": {
+          "label": "Basic Campaign Setup & Management",
+          "price_range": "₹5,000 – ₹6,000",
+          "min": 5000,
+          "max": 6000,
+          "criteria": "Single platform (Meta or Google), basic audience targeting, 1-2 ad sets, weekly reporting"
+        },
+        "medium": {
+          "label": "Medium Performance Campaign",
+          "price_range": "₹6,000 – ₹7,000",
+          "min": 6500,
+          "max": 7000,
+          "criteria": "Dual platform setup, retargeting audience, A/B creative testing, bi-weekly optimization"
+        },
+        "advanced": {
+          "label": "Higher Requirement Performance Campaign",
+          "price_range": "₹7,000 – ₹8,000",
+          "min": 7000,
+          "max": 8000,
+          "criteria": "Multi-campaign lead funnel, advanced conversion tracking (Pixel / CAPI / Google Tag Manager), ongoing daily optimization and detailed reporting"
+        }
+      },
+      "qualification_questions": [
+        "Aapka target location ya audience kya hai (local city ya pan-India)?",
+        "Kya aapne pehle kabhi Facebook, Instagram ya Google par ads run kiye hain?",
+        "Aapka primary goal kya hai — direct phone calls, WhatsApp messages ya lead form submissions?"
+      ],
+      "objection_handling": {
+        "already_run_ads": {
+          "angle": "Audit, lower CPL & higher lead quality",
+          "guidance": "Politely ask how the previous campaign performed and if lead quality/cost-per-lead can be optimized through better targeting."
+        },
+        "price_too_high": {
+          "angle": "Clarify service fee vs ad spend & starter pilot",
+          "guidance": "Clarify that our service management fee starts at ₹5,000 for full campaign setup and optimization, and offer a starter test campaign."
+        },
+        "not_needed_now": {
+          "angle": "Polite open-ended stay in touch",
+          "guidance": "Keep relationship warm; advise them to reach out whenever they want to scale customer acquisition."
+        },
+        "send_details": {
+          "angle": "Concise campaign strategy overview",
+          "guidance": "Explain simply how Meta/Google targeting works for their specific category and what results they can expect."
+        }
+      },
+      "process_steps": [
+        "Step 1: Goal & target audience discussion",
+        "Step 2: Ad creative & copywriting preparation",
+        "Step 3: Campaign setup & tracking configuration",
+        "Step 4: Campaign launch",
+        "Step 5: Daily optimization & budget tuning",
+        "Step 6: Performance reporting & review"
+      ],
+      "proposal_template": {
+        "recommended_service": "Performance Marketing",
+        "deliverables": [
+          "Google / Meta ads campaign setup",
+          "Audience & location targeting",
+          "Ad creative guidance & copy",
+          "Performance monitoring & optimization",
+          "Regular reporting"
+        ],
+        "timeline": "Campaign goes live within 2 to 3 days",
+        "process": "Strategy → Setup → Launch → Daily Optimization → Reporting"
+      }
+    }
+  ]
+}
