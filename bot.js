@@ -506,8 +506,7 @@ async function startWhatsAppBot() {
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      botState.status = 'error';
-      botState.qrDataUrl = null;
+      botState.status = 'connecting';
       console.log(`⚠️ Connection closed (status: ${statusCode}). Reconnecting: ${shouldReconnect}`);
       addLog('warn', `Connection closed. Reconnecting: ${shouldReconnect}`);
 
@@ -515,6 +514,7 @@ async function startWhatsAppBot() {
         setTimeout(startWhatsAppBot, 3000);
       } else {
         console.log('❌ Logged out. Clearing session and regenerating QR...');
+        botState.qrDataUrl = null;
         fs.rmSync(AUTH_DIR, { recursive: true, force: true });
         setTimeout(startWhatsAppBot, 3000);
       }
@@ -750,9 +750,11 @@ app.get('/', (req, res) => {
         <div class="col-md-5 text-center border-end border-secondary">
           <h6 class="fw-bold text-light mb-2"><i class="fa-solid fa-qrcode me-1 text-warning"></i> 1. Scan QR Code</h6>
           <div class="text-secondary small mb-2">WhatsApp ➡️ Linked Devices se scan karein:</div>
-          <div class="p-2 bg-dark rounded d-inline-block shadow">
-            <div id="qrLoading" class="text-muted small py-4">Generating QR Code...</div>
-            <img id="qrImg" src="" alt="WhatsApp QR" class="img-fluid rounded" style="max-width: 230px; display: none;">
+          <div class="p-3 bg-white rounded d-inline-block shadow text-center" style="min-width: 240px; min-height: 240px; display: inline-flex; align-items: center; justify-content: center;">
+            <div id="qrLoading" class="text-dark fw-bold py-4">
+              <div class="spinner-border text-primary mb-2"></div><br>Generating QR Code...
+            </div>
+            <img id="qrImg" src="" alt="WhatsApp QR" class="img-fluid rounded" style="max-width: 220px; display: none;">
           </div>
         </div>
 
@@ -859,14 +861,26 @@ app.get('/', (req, res) => {
           badge.innerHTML = '<i class="fa-solid fa-circle-check me-1"></i> Connected';
           document.getElementById('connectedAs').innerText = data.connectedNumber || 'Active';
           document.getElementById('connectContainer').style.display = 'none';
-        } else if (data.status === 'qr_ready') {
-          badge.className = 'badge bg-warning text-dark badge-status';
-          badge.innerHTML = '<i class="fa-solid fa-qrcode me-1"></i> Ready to Connect';
+        } else {
           document.getElementById('connectContainer').style.display = 'block';
           if (data.qrDataUrl) {
-            document.getElementById('qrImg').src = data.qrDataUrl;
-            document.getElementById('qrImg').style.display = 'inline-block';
+            badge.className = 'badge bg-warning text-dark badge-status';
+            badge.innerHTML = '<i class="fa-solid fa-qrcode me-1"></i> Ready to Connect';
+            const qrImg = document.getElementById('qrImg');
+            if (qrImg.src !== data.qrDataUrl) {
+              qrImg.src = data.qrDataUrl;
+            }
+            qrImg.style.display = 'block';
             document.getElementById('qrLoading').style.display = 'none';
+          } else {
+            badge.className = 'badge bg-secondary badge-status';
+            badge.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Generating QR...';
+            document.getElementById('qrImg').style.display = 'none';
+            document.getElementById('qrLoading').style.display = 'block';
+          }
+          if (data.pairingCode) {
+            document.getElementById('pairingResultBox').style.display = 'block';
+            document.getElementById('pairingCodeDisplay').innerText = data.pairingCode;
           }
         }
         document.getElementById('queryCount').innerText = data.totalQueriesProcessed || 0;
