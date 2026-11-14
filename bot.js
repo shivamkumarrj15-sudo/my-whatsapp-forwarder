@@ -538,6 +538,7 @@ async function initSession(sessionId, label = '') {
       }
 
       if (connection === 'close') {
+        sessionObj.sock = null;
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
         sessionObj.status = sessionObj.connectedNumber ? 'reconnecting' : (sessionObj.qrRaw ? 'qr_ready' : 'connecting');
