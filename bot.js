@@ -1,13 +1,16 @@
 /**
- * Multi-Device Human Friend & 2-Service Sales Agent - WhatsApp Bot & Dashboard
+ * OpenWA - Official WhatsApp Gateway & AI Sales Agent Dashboard
+ * Upstream: https://github.com/rmyndharis/OpenWA.git
  * 
  * Features:
- * - Multi-Device / Multi-Number WhatsApp Support: Connect user's number, friend's number, or multiple numbers simultaneously!
- * - High-Contrast Direct QR Code Scanner & 8-Digit Pairing Code per device.
- * - AI Sales Agent (Strictly 2 Services: Web Development ₹5k-₹10k & Performance Marketing ₹5k-₹8k).
- * - Human-like consultative sales flow (Analyze, Think, Short natural Hinglish replies).
- * - Realistic ~10s typing delay with WhatsApp 'composing' presence.
- * - Dedicated auth session folders per device.
+ * - Authentic OpenWA Modern Dashboard Design (Plus Jakarta Sans, Dark Slate / Light Mode, Sidebar Navigation).
+ * - Multi-Device / Multi-Number WhatsApp Session Manager (Primary number, Friend's number, Business numbers).
+ * - High-Contrast Live QR Code Scanner (Never goes black, auto-refreshes, fullscreen mode).
+ * - 8-Digit Phone Pairing Code Alternative (No camera required).
+ * - Strict 2-Service AI Sales Agent (Web Development ₹5k–₹10k & Performance Marketing ₹5k–₹8k).
+ * - Consultative Sales Pipeline (Analyze requirement, think, short human Hinglish replies, 10s typing delay).
+ * - Automated Lead Extraction (leads.json) & Calendar Sync (Google Calendar + calendar.ics).
+ * - Live Simulator & Real-time Activity Logs.
  */
 
 const {
@@ -161,10 +164,10 @@ function generateIcsFeed() {
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//WhatsApp Assistant Calendar//EN',
+    'PRODID:-//OpenWA WhatsApp Gateway Calendar//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
-    'X-WR-CALNAME:WhatsApp Schedule (Classes, Meetings, Gym)',
+    'X-WR-CALNAME:OpenWA WhatsApp Schedule',
     'X-WR-TIMEZONE:Asia/Kolkata',
   ];
 
@@ -176,12 +179,12 @@ function generateIcsFeed() {
     const dtend = fmt(new Date(createdDate.getTime() + 60 * 60 * 1000));
 
     lines.push('BEGIN:VEVENT');
-    lines.push(`UID:${evt.id || Date.now()}@whatsapp-assistant`);
+    lines.push(`UID:${evt.id || Date.now()}@openwa-assistant`);
     lines.push(`DTSTAMP:${dtstamp}`);
     lines.push(`DTSTART:${dtstart}`);
     lines.push(`DTEND:${dtend}`);
     lines.push(`SUMMARY:${(evt.title || 'WhatsApp Event').replace(/\n/g, ' ')}`);
-    lines.push(`DESCRIPTION:${(evt.timing || evt.notes || 'Scheduled via WhatsApp').replace(/\n/g, ' ')}`);
+    lines.push(`DESCRIPTION:${(evt.timing || evt.notes || 'Scheduled via OpenWA WhatsApp').replace(/\n/g, ' ')}`);
     lines.push('STATUS:CONFIRMED');
     lines.push('END:VEVENT');
   }
@@ -262,7 +265,7 @@ async function generateHumanReply(sender, userMessage) {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${activeOrKey}`,
             'HTTP-Referer': 'https://my-whatsapp-forwarder.onrender.com',
-            'X-Title': 'WhatsApp Professional 2-Service Advisor',
+            'X-Title': 'OpenWA AI Sales Advisor',
           },
           body: JSON.stringify({
             model,
@@ -391,7 +394,7 @@ function enqueueHumanReply(sessionObj, remoteJid, senderPhone, incomingText) {
 
   if (q.timer) clearTimeout(q.timer);
 
-  // Set 6-second debounce + 4.5-second typing = ~10.5 seconds realistic delay
+  // 6-second debounce + 4.5-second typing = ~10.5 seconds realistic delay
   q.timer = setTimeout(async () => {
     try {
       const combinedText = q.texts.join(' ');
@@ -410,7 +413,7 @@ function enqueueHumanReply(sessionObj, remoteJid, senderPhone, incomingText) {
           phone: phoneMatch ? phoneMatch[1] : senderPhone,
           senderPhone: senderPhone,
           device: sessionObj.label || sessionObj.id,
-          status: isConfirmed ? 'Service Confirmed / Waiting Boss Verification' : 'Lead Inquired',
+          status: isConfirmed ? 'Service Confirmed / Advance Pending' : 'Lead Inquired',
           notes: combinedText,
         });
       }
@@ -459,7 +462,7 @@ async function initSession(sessionId, label = '') {
     if (existing.sock) return existing;
   }
 
-  // Use dedicated folder per session
+  // Dedicated directory per session
   const sessionAuthDir = sessionId === 'default'
     ? (fs.existsSync(path.join(AUTH_BASE_DIR, 'creds.json')) ? AUTH_BASE_DIR : path.join(AUTH_BASE_DIR, 'session_default'))
     : path.join(AUTH_BASE_DIR, `session_${sessionId}`);
@@ -499,7 +502,7 @@ async function initSession(sessionId, label = '') {
     const { state, saveCreds } = await useMultiFileAuthState(sessionAuthDir);
     const { version } = await fetchLatestBaileysVersion();
 
-    console.log(`🚀 Initializing WhatsApp Session [${sessionObj.label}] (Baileys v${version.join('.')})...`);
+    console.log(`🚀 [OpenWA] Initializing WhatsApp Session [${sessionObj.label}] (Baileys v${version.join('.')})...`);
 
     const sock = makeWASocket({
       version,
@@ -659,7 +662,7 @@ function getPrimarySession() {
 const app = express();
 app.use(express.json());
 
-// List all devices
+// List all devices / sessions
 app.get('/api/devices', (req, res) => {
   const list = registeredSessions.map(r => {
     const s = sessions.get(r.id);
@@ -678,10 +681,10 @@ app.get('/api/devices', (req, res) => {
   res.json(list);
 });
 
-// Add a new device
+// Create a new WhatsApp session
 app.post('/api/devices', async (req, res) => {
   try {
-    const label = (req.body?.label || '').trim() || `WhatsApp Device ${registeredSessions.length + 1}`;
+    const label = (req.body?.label || '').trim() || `WhatsApp Session ${registeredSessions.length + 1}`;
     const id = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6);
     registeredSessions.push({ id, label });
     saveRegisteredSessions();
@@ -692,18 +695,18 @@ app.post('/api/devices', async (req, res) => {
   }
 });
 
-// Delete / Disconnect a device
+// Delete / Disconnect a session
 app.delete('/api/devices/:id', async (req, res) => {
   try {
     const id = req.params.id;
     await deleteSession(id);
-    res.json({ success: true, message: `Device ${id} removed successfully` });
+    res.json({ success: true, message: `Session ${id} removed successfully` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Direct PNG QR Image Stream for a specific device
+// Direct PNG QR Image Stream for a session
 app.get('/api/devices/:id/qr', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
@@ -729,7 +732,7 @@ app.get('/api/devices/:id/qr', async (req, res) => {
 
   try {
     let msg = 'Loading WhatsApp QR Scanner...';
-    if (!s) msg = 'Device Not Found';
+    if (!s) msg = 'Session Not Found';
     else if (s.status === 'connected') msg = `Connected: ${s.connectedNumber || 'Active'}`;
     else if (s.status === 'connecting') msg = `Starting Scanner for ${s.label}...`;
 
@@ -744,12 +747,12 @@ app.get('/api/devices/:id/qr', async (req, res) => {
   }
 });
 
-// Request 8-Digit Pairing Code for a specific device
+// Request 8-Digit Pairing Code for a session
 app.post('/api/devices/:id/pair', async (req, res) => {
   try {
     const s = sessions.get(req.params.id);
-    if (!s) return res.status(404).json({ error: 'Device not found' });
-    if (!s.sock) return res.status(500).json({ error: 'Device WhatsApp engine starting... please try again in 5s.' });
+    if (!s) return res.status(404).json({ error: 'Session not found' });
+    if (!s.sock) return res.status(500).json({ error: 'WhatsApp engine starting... please try again in 5s.' });
     if (s.status === 'connected') return res.json({ success: false, message: 'WhatsApp is already connected on this device!' });
 
     let { phone } = req.body;
@@ -770,11 +773,12 @@ app.post('/api/devices/:id/pair', async (req, res) => {
   }
 });
 
-// Health check
+// Health check (Compatible with OpenWA /api/health)
 app.get('/api/health', (req, res) => {
   const primary = getPrimarySession();
   res.json({
     status: 'ok',
+    version: '0.23.4',
     primaryStatus: primary.status,
     connectedAs: primary.connectedNumber,
     devicesCount: registeredSessions.length,
@@ -877,380 +881,1125 @@ app.post('/api/ask', async (req, res) => {
   res.json({ success: true, answer: reply });
 });
 
-// ==================== DASHBOARD HTML PAGE ====================
+// ==================== OFFICIAL OPENWA DASHBOARD HTML ====================
 app.get('/', (req, res) => {
   res.setHeader('Content-Type', 'text/html');
   res.send(`<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Multi-Device WhatsApp AI Sales Manager</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <title>OpenWA - WhatsApp API Gateway & AI Sales Manager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <style>
-    body { background-color: #0b1329; color: #e2e8f0; font-family: 'Segoe UI', system-ui, sans-serif; }
-    .card { background: #1e293b; border: 1px solid #334155; border-radius: 14px; }
-    .badge-status { font-size: 0.85rem; padding: 5px 12px; border-radius: 20px; }
-    .code-display { font-size: 2.3rem; letter-spacing: 6px; font-weight: 800; color: #38bdf8; background: #020617; border-radius: 8px; }
-    .human-chat-box { background: #0f172a; border-radius: 10px; border: 1px solid #334155; }
+    :root {
+      --primary: #25d366;
+      --primary-text: #25d366;
+      --primary-hover: #1da851;
+      --primary-soft: rgba(37, 211, 102, 0.12);
+      --bg-light: #0f172a;
+      --bg-white: #1e293b;
+      --bg-card: #1e293b;
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border: #334155;
+      --error: #ef4444;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --info: #60a5fa;
+      --radius: 12px;
+      --sidebar-w: 250px;
+    }
     
-    /* Device Tabs Styling */
+    [data-theme='light'] {
+      --bg-light: #f8fafc;
+      --bg-white: #ffffff;
+      --bg-card: #ffffff;
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --primary-text: #17813e;
+      --primary-soft: rgba(37, 211, 102, 0.12);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      background: var(--bg-light);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+    }
+
+    /* ==================== SIDEBAR ==================== */
+    .sidebar {
+      width: var(--sidebar-w);
+      background: var(--bg-white);
+      border-right: 1px solid var(--border);
+      height: 100vh;
+      position: fixed;
+      top: 0;
+      left: 0;
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+      transition: transform 0.3s ease;
+    }
+
+    .sidebar-header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .logo-container {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: #25d366;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 20px;
+      box-shadow: 0 4px 12px rgba(37, 211, 102, 0.35);
+    }
+
+    .brand-title {
+      font-size: 1.15rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .version-badge {
+      font-size: 0.65rem;
+      background: var(--primary-soft);
+      color: var(--primary-text);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 700;
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      padding: 1.2rem 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      overflow-y: auto;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      padding: 0.75rem 1rem;
+      color: var(--text-secondary);
+      border-radius: var(--radius);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-decoration: none;
+      border: 1px solid transparent;
+    }
+
+    .nav-item:hover {
+      background: var(--primary-soft);
+      color: var(--primary-text);
+    }
+
+    .nav-item.active {
+      background: var(--primary-soft);
+      color: var(--primary-text);
+      border-color: rgba(37, 211, 102, 0.3);
+    }
+
+    .nav-item i {
+      font-size: 1.05rem;
+      width: 20px;
+      text-align: center;
+    }
+
+    .sidebar-footer {
+      padding: 1rem 1.25rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .theme-toggle-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .theme-toggle-btn:hover {
+      color: var(--text-primary);
+      border-color: var(--text-muted);
+    }
+
+    /* ==================== MAIN CONTENT ==================== */
+    .main-wrapper {
+      margin-left: var(--sidebar-w);
+      flex: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .top-header {
+      padding: 1.25rem 2rem;
+      background: var(--bg-white);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 90;
+    }
+
+    .header-breadcrumb {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .header-breadcrumb span {
+      color: var(--text-primary);
+      font-weight: 700;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .status-pill {
+      font-size: 0.8rem;
+      padding: 5px 14px;
+      border-radius: 20px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-pill.connected {
+      background: rgba(34, 197, 94, 0.15);
+      color: #22c55e;
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+
+    .status-pill.ready {
+      background: rgba(245, 158, 11, 0.15);
+      color: #f59e0b;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .btn-brand {
+      background: #25d366;
+      color: #0b1329;
+      font-weight: 700;
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.85rem;
+      transition: background 0.2s;
+    }
+
+    .btn-brand:hover {
+      background: #1da851;
+      color: white;
+    }
+
+    .content-area {
+      padding: 2rem;
+      flex: 1;
+    }
+
+    /* OpenWA Cards & Tables */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+
+    .stat-card:hover {
+      transform: translateY(-2px);
+      transition: transform 0.2s ease;
+    }
+
+    .stat-card .watermark {
+      position: absolute;
+      right: -10px;
+      bottom: -15px;
+      font-size: 80px;
+      opacity: 0.04;
+      pointer-events: none;
+    }
+
+    .stat-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-value {
+      font-size: 1.85rem;
+      font-weight: 800;
+      color: var(--text-primary);
+    }
+
+    .stat-sub {
+      font-size: 0.75rem;
+      color: var(--primary-text);
+      margin-top: 4px;
+      font-weight: 600;
+    }
+
+    .panel-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.25rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .panel-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Table styling matching OpenWA */
+    .openwa-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+
+    .openwa-table th {
+      text-align: left;
+      padding: 10px 14px;
+      color: var(--text-muted);
+      font-weight: 700;
+      border-bottom: 1px solid var(--border);
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.04em;
+    }
+
+    .openwa-table td {
+      padding: 14px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-primary);
+    }
+
+    .openwa-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* High-Contrast White Scanner Box */
+    .scanner-white-box {
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 20px;
+      display: inline-block;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      border: 4px solid #25d366;
+    }
+
+    .scanner-white-box img {
+      width: 250px;
+      height: 250px;
+      display: block;
+      margin: 0 auto;
+      object-fit: contain;
+    }
+
+    /* Device Tabs */
     .device-tab-btn {
-      background: #1e293b;
-      color: #94a3b8;
-      border: 1px solid #334155;
-      padding: 10px 18px;
+      background: var(--bg-white);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      padding: 8px 16px;
       border-radius: 10px;
       font-weight: 600;
-      transition: all 0.2s ease;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
       gap: 8px;
+      font-size: 0.85rem;
+      transition: all 0.2s;
     }
-    .device-tab-btn:hover {
-      background: #334155;
-      color: #f8fafc;
-    }
+
     .device-tab-btn.active {
-      background: #0284c7;
-      color: #ffffff;
-      border-color: #38bdf8;
-      box-shadow: 0 0 15px rgba(56, 189, 248, 0.4);
+      background: #25d366;
+      color: #0b1329;
+      border-color: #25d366;
+      font-weight: 700;
+      box-shadow: 0 0 12px rgba(37, 211, 102, 0.35);
     }
-    .scanner-white-box {
-      background: #ffffff;
-      border-radius: 16px;
-      padding: 18px;
+
+    .code-display {
+      font-size: 2.2rem;
+      letter-spacing: 6px;
+      font-weight: 800;
+      color: #38bdf8;
+      background: #020617;
+      border-radius: 8px;
+      padding: 8px 16px;
       display: inline-block;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      font-family: 'JetBrains Mono', monospace;
     }
-    .service-chip {
-      background: #0f172a;
-      border: 1px solid #38bdf8;
+
+    .form-control, .form-select {
+      background: var(--bg-light);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      padding: 10px 14px;
+      border-radius: 8px;
+      width: 100%;
+      font-family: inherit;
+      font-size: 0.9rem;
+    }
+
+    .form-control:focus, .form-select:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+
+    /* Service Badge Box */
+    .service-pill-box {
+      border: 1px solid var(--border);
+      background: var(--bg-light);
       border-radius: 10px;
-      padding: 12px 16px;
+      padding: 16px;
+    }
+
+    @media (max-width: 820px) {
+      .sidebar {
+        transform: translateX(-100%);
+      }
+      .sidebar.open {
+        transform: translateX(0);
+      }
+      .main-wrapper {
+        margin-left: 0;
+      }
     }
   </style>
 </head>
-<body class="p-3 p-md-4">
-  <div class="container" style="max-width: 1000px;">
+<body>
+
+  <!-- ==================== SIDEBAR ==================== -->
+  <aside class="sidebar" id="appSidebar">
+    <div class="sidebar-header">
+      <div class="logo-container">
+        <i class="fa-brands fa-whatsapp"></i>
+      </div>
+      <div>
+        <div class="brand-title">
+          OpenWA <span class="version-badge">v0.23.4</span>
+        </div>
+        <div style="font-size: 0.65rem; color: var(--text-muted); font-weight: 600;">WhatsApp API & AI Gateway</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a class="nav-item active" id="nav-dashboard" onclick="navigateTo('dashboard')">
+        <i class="fa-solid fa-chart-pie"></i>
+        <span>Dashboard</span>
+      </a>
+      <a class="nav-item" id="nav-sessions" onclick="navigateTo('sessions')">
+        <i class="fa-solid fa-mobile-screen"></i>
+        <span>WhatsApp Sessions</span>
+      </a>
+      <a class="nav-item" id="nav-chats" onclick="navigateTo('chats')">
+        <i class="fa-solid fa-comments"></i>
+        <span>Live Chats & Simulator</span>
+      </a>
+      <a class="nav-item" id="nav-ai" onclick="navigateTo('ai')">
+        <i class="fa-solid fa-robot"></i>
+        <span>2-Service AI Sales</span>
+      </a>
+      <a class="nav-item" id="nav-leads" onclick="navigateTo('leads')">
+        <i class="fa-solid fa-calendar-check"></i>
+        <span>Leads & Schedule</span>
+      </a>
+      <a class="nav-item" id="nav-keys" onclick="navigateTo('keys')">
+        <i class="fa-solid fa-key"></i>
+        <span>API & Model Keys</span>
+      </a>
+      <a class="nav-item" id="nav-logs" onclick="navigateTo('logs')">
+        <i class="fa-solid fa-terminal"></i>
+        <span>System Logs</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button class="theme-toggle-btn" onclick="toggleTheme()">
+        <i class="fa-solid fa-moon" id="themeIcon"></i>
+        <span id="themeLabel">Dark Theme</span>
+      </button>
+      <div style="font-size: 0.75rem; color: #22c55e; font-weight: 700;">
+        <i class="fa-solid fa-circle me-1" style="font-size: 8px;"></i> Online
+      </div>
+    </div>
+  </aside>
+
+  <!-- ==================== MAIN CONTENT ==================== -->
+  <div class="main-wrapper">
     
     <!-- Top Header -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 pb-3 border-bottom border-secondary">
-      <div>
-        <h3 class="fw-bold mb-1" style="color: #38bdf8;">
-          <i class="fa-brands fa-whatsapp text-success me-2"></i>Multi-Device WhatsApp AI Sales Manager
-        </h3>
-        <p class="text-secondary small mb-0">
-          Connect Multiple WhatsApp Numbers (Your number, Friend's number) & Run 24/7 AI Sales Agent (Web Development & Marketing)
-        </p>
-      </div>
-      <div class="mt-2 mt-md-0 d-flex align-items-center gap-2">
-        <span id="globalDeviceCountBadge" class="badge bg-primary badge-status"><i class="fa-solid fa-mobile-screen me-1"></i> 1 Device</span>
-        <span class="badge bg-success badge-status"><i class="fa-solid fa-robot me-1"></i> 2-Service AI Live</span>
-      </div>
-    </div>
-
-    <!-- Active 2-Service Catalog Overview -->
-    <div class="row g-3 mb-4">
-      <div class="col-md-6">
-        <div class="service-chip">
-          <div class="d-flex justify-content-between align-items-center">
-            <h6 class="fw-bold text-info mb-1"><i class="fa-solid fa-globe me-2"></i>Service 1: Web Development</h6>
-            <span class="badge bg-info text-dark fw-bold">₹5,000 – ₹10,000</span>
-          </div>
-          <div class="text-secondary small">
-            Professional business website, Mobile-responsive, WhatsApp integration, Contact form, Basic SEO setup.
-          </div>
+    <header class="top-header">
+      <div class="d-flex align-items-center gap-3">
+        <button class="btn-brand d-md-none" style="padding: 6px 10px;" onclick="toggleSidebar()">
+          <i class="fa-solid fa-bars"></i>
+        </button>
+        <div class="header-breadcrumb">
+          OpenWA &nbsp;›&nbsp; <span id="breadcrumb-page">Dashboard</span>
         </div>
       </div>
-      <div class="col-md-6">
-        <div class="service-chip">
-          <div class="d-flex justify-content-between align-items-center">
-            <h6 class="fw-bold text-warning mb-1"><i class="fa-solid fa-bullhorn me-2"></i>Service 2: Performance Marketing</h6>
-            <span class="badge bg-warning text-dark fw-bold">₹5,000 – ₹8,000</span>
-          </div>
-          <div class="text-secondary small">
-            Google & Meta Ads support, Campaign setup, Audience targeting, Ad optimization, Performance monitoring.
-          </div>
+      <div class="top-actions">
+        <div id="globalStatusBadge" class="status-pill ready">
+          <i class="fa-solid fa-qrcode"></i> Ready to Connect
         </div>
-      </div>
-    </div>
-
-    <!-- Multi-Device Tab Bar -->
-    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-      <div id="deviceTabsContainer" class="d-flex flex-wrap gap-2 align-items-center">
-        <!-- Rendered dynamically -->
-        <button class="device-tab-btn active"><i class="fa-solid fa-mobile-screen"></i> Primary (Mera Number)</button>
-      </div>
-      <button class="btn btn-warning fw-bold text-dark btn-sm" onclick="showAddDevicePrompt()">
-        <i class="fa-solid fa-plus me-1"></i> + Add WhatsApp Number (Friend's / Other)
-      </button>
-    </div>
-
-    <!-- Active Device Management Card -->
-    <div class="card p-4 mb-4 border-info">
-      
-      <!-- Device Header -->
-      <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 pb-2 border-bottom border-secondary border-opacity-50">
-        <div>
-          <h5 class="fw-bold text-light mb-0 d-inline-block me-2">
-            Managing: <span id="activeDeviceTitle" class="text-info">Primary (Mera Number)</span>
-          </h5>
-          <span id="activeDeviceStatusBadge" class="badge bg-warning text-dark badge-status">Ready to Scan</span>
-        </div>
-        <div class="mt-2 mt-md-0">
-          <button class="btn btn-sm btn-outline-danger" onclick="deleteActiveDevice()">
-            <i class="fa-solid fa-trash-can me-1"></i> Disconnect / Remove Device
-          </button>
-        </div>
-      </div>
-
-      <!-- State 1: When WhatsApp is ALREADY CONNECTED -->
-      <div id="connectedDeviceView" style="display: none;" class="p-4 bg-dark bg-opacity-75 rounded-3 border border-success text-center">
-        <div class="display-6 text-success mb-2"><i class="fa-solid fa-circle-check"></i></div>
-        <h4 class="fw-bold text-light">WhatsApp Connected Successfully!</h4>
-        <p class="fs-5 text-warning fw-semibold mb-2" id="connectedNumberText">+91 XXXXXXXXXX</p>
-        <p class="text-secondary small mb-3">
-          This WhatsApp number is live and linked! Incoming client inquiries for <strong>Web Development</strong> and <strong>Performance Marketing</strong> are handled automatically by the AI Sales Agent with realistic ~10s human typing delay.
-        </p>
-        <button class="btn btn-sm btn-outline-danger" onclick="deleteActiveDevice()">
-          <i class="fa-solid fa-arrow-right-from-bracket me-1"></i> Log Out & Re-Scan
+        <button class="btn-brand" onclick="addNewSession()">
+          <i class="fa-solid fa-plus"></i> + New Session
         </button>
       </div>
+    </header>
 
-      <!-- State 2: When WhatsApp is NOT CONNECTED (Show Scanner & Pairing Code together) -->
-      <div id="scannerDeviceView" class="row g-4 align-items-center">
+    <!-- Views Container -->
+    <main class="content-area">
+
+      <!-- ==================== VIEW 1: DASHBOARD ==================== -->
+      <section id="view-dashboard" class="app-view">
         
-        <!-- Left: Live QR Code Scanner directly on website -->
-        <div class="col-md-5 text-center border-end border-secondary">
-          <h6 class="fw-bold text-light mb-1">
-            <i class="fa-solid fa-qrcode text-warning me-1"></i> 1. Scan QR Code Scanner
-          </h6>
-          <p class="text-secondary small mb-2">
-            Apne mobile me WhatsApp kholein ➡️ <strong>Linked Devices</strong> ➡️ <strong>Link a device</strong> karke scan karein:
-          </p>
-
-          <!-- High-Contrast White Scanner Card -->
-          <div class="scanner-white-box my-2">
-            <img id="deviceQrImage" src="/api/devices/default/qr" alt="WhatsApp QR Code Scanner" class="img-fluid rounded" style="width: 240px; height: 240px; display: block; margin: 0 auto; object-fit: contain;">
-            <div id="qrLoadingText" class="mt-2 text-dark small fw-bold">Live QR Scanner Ready</div>
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <i class="fa-solid fa-mobile-screen watermark"></i>
+            <div class="stat-title">Active Sessions</div>
+            <div class="stat-value" id="dashTotalSessions">1</div>
+            <div class="stat-sub"><i class="fa-solid fa-circle-check me-1"></i> Multi-Device Support Active</div>
           </div>
-
-          <div class="mt-2 d-flex justify-content-center gap-2">
-            <button class="btn btn-sm btn-outline-warning" onclick="refreshActiveQR()">
-              <i class="fa-solid fa-arrows-rotate me-1"></i> Refresh Scanner
-            </button>
-            <a id="fullscreenQrLink" href="/api/devices/default/qr" target="_blank" class="btn btn-sm btn-warning fw-bold text-dark">
-              <i class="fa-solid fa-expand me-1"></i> Open Fullscreen
-            </a>
+          <div class="stat-card">
+            <i class="fa-solid fa-paper-plane watermark"></i>
+            <div class="stat-title">Messages Processed</div>
+            <div class="stat-value" id="dashTotalMessages">0</div>
+            <div class="stat-sub">~10s Natural Human Delay</div>
+          </div>
+          <div class="stat-card">
+            <i class="fa-solid fa-robot watermark"></i>
+            <div class="stat-title">AI Sales Persona</div>
+            <div class="stat-value" style="font-size: 1.35rem; color: #38bdf8;">Web & Marketing</div>
+            <div class="stat-sub">₹5,000 – ₹10,000 Range</div>
+          </div>
+          <div class="stat-card">
+            <i class="fa-solid fa-user-check watermark"></i>
+            <div class="stat-title">Captured Leads</div>
+            <div class="stat-value" id="dashTotalLeads" style="color: #22c55e;">0</div>
+            <div class="stat-sub">Saved into leads.json</div>
           </div>
         </div>
 
-        <!-- Right: 8-Digit Pairing Code Alternative (Bina Camera ke) -->
-        <div class="col-md-7">
-          <h6 class="fw-bold text-light mb-1">
-            <i class="fa-solid fa-mobile-screen-button text-info me-1"></i> 2. Ya 8-Digit Code Se Connect Karein
-          </h6>
-          <p class="small text-secondary mb-3">
-            Agar camera kaam nahi kar raha to mobile number daal kar WhatsApp 8-digit code generate karein:
-          </p>
+        <!-- 2-Service Catalog Card -->
+        <div class="panel-card" style="border-left: 4px solid #25d366;">
+          <div class="panel-header">
+            <div class="panel-title">
+              <i class="fa-solid fa-briefcase text-success"></i> Active 2-Service Sales Catalog
+            </div>
+            <span class="badge" style="background: rgba(37, 211, 102, 0.15); color: #25d366; font-weight: 700; padding: 4px 10px; border-radius: 6px;">
+              Only 2 Services Enabled
+            </span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+            <div class="service-pill-box">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <strong style="color: #38bdf8; font-size: 1rem;"><i class="fa-solid fa-globe me-1"></i> 1. Web Development</strong>
+                <span style="font-weight: 800; color: #22c55e; font-size: 0.9rem;">₹5,000 – ₹10,000</span>
+              </div>
+              <p style="font-size: 0.825rem; color: var(--text-secondary); line-height: 1.5;">
+                Professional business websites, mobile-responsive layouts, contact/WhatsApp buttons, basic SEO setup, clean deployment.
+              </p>
+            </div>
+            <div class="service-pill-box">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <strong style="color: #f59e0b; font-size: 1rem;"><i class="fa-solid fa-bullhorn me-1"></i> 2. Performance Marketing</strong>
+                <span style="font-weight: 800; color: #22c55e; font-size: 0.9rem;">₹5,000 – ₹8,000</span>
+              </div>
+              <p style="font-size: 0.825rem; color: var(--text-secondary); line-height: 1.5;">
+                Targeted Meta (Facebook/Instagram) & Google ad setup, audience research, creative campaign optimization, verified WhatsApp leads.
+              </p>
+            </div>
+          </div>
+        </div>
 
-          <div class="input-group mb-3">
-            <span class="input-group-text bg-dark text-secondary border-secondary">+91</span>
-            <input type="text" id="phonePairInput" class="form-control bg-dark text-light border-secondary" placeholder="Enter 10-digit number (e.g. 8005844014)..." value="8005844014">
-            <button class="btn btn-info fw-bold text-dark" onclick="requestDevicePairingCode()">
-              <i class="fa-solid fa-key me-1"></i> Get 8-Digit Code
+        <!-- WhatsApp Sessions Quick Overview Table -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <i class="fa-solid fa-list-check"></i> WhatsApp Sessions Overview
+            </div>
+            <button class="btn-brand" style="padding: 5px 12px; font-size: 0.8rem;" onclick="navigateTo('sessions')">
+              Manage Sessions & Scanners ➡️
+            </button>
+          </div>
+          <div style="overflow-x: auto;">
+            <table class="openwa-table">
+              <thead>
+                <tr>
+                  <th>Session ID</th>
+                  <th>Device Name / Label</th>
+                  <th>Status</th>
+                  <th>Connected Phone</th>
+                  <th>Queries Handled</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="dashSessionsTableBody">
+                <!-- Dynamically rendered -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ==================== VIEW 2: SESSIONS & SCANNERS ==================== -->
+      <section id="view-sessions" class="app-view" style="display: none;">
+        
+        <div class="panel-card">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">
+                <i class="fa-solid fa-qrcode text-warning"></i> WhatsApp Sessions & Multi-Device Manager
+              </div>
+              <p style="font-size: 0.825rem; color: var(--text-muted); margin-top: 2px;">
+                Connect your personal number, friend's number, or multiple marketing numbers simultaneously.
+              </p>
+            </div>
+            <button class="btn-brand" onclick="addNewSession()">
+              <i class="fa-solid fa-plus me-1"></i> + Add Another Number (Friend's / Team)
             </button>
           </div>
 
-          <div id="devicePairResultBox" style="display:none;" class="p-3 bg-dark rounded border border-warning text-center">
-            <div class="text-secondary small mb-1">WhatsApp me ye 8-digit code enter karein:</div>
-            <div id="devicePairCodeDisplay" class="code-display my-2 py-1">--------</div>
-            <div class="text-start small text-warning p-2 rounded bg-black bg-opacity-60">
-              <strong>Kaise Dalein:</strong> WhatsApp ➡️ Linked Devices ➡️ Link a Device ➡️ Niche <strong>"Link with phone number instead"</strong> par tap karein aur ye code daalein.
+          <!-- Session Tabs Bar -->
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 1.5rem;" id="sessionTabsBar">
+            <!-- Dynamically populated -->
+          </div>
+
+          <!-- Active Session Details & Scanner Box -->
+          <div id="sessionManagerContent" style="background: var(--bg-light); border: 1px solid var(--border); border-radius: 14px; padding: 1.5rem;">
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border);">
+              <div>
+                <h4 id="activeSessionTitle" style="font-weight: 800; font-size: 1.15rem; color: var(--text-primary); margin-bottom: 2px;">Primary (Mera Number)</h4>
+                <div style="font-size: 0.75rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;" id="activeSessionId">ID: default</div>
+              </div>
+              <button class="btn-brand" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);" onclick="deleteActiveSession()">
+                <i class="fa-solid fa-trash-can me-1"></i> Disconnect / Remove
+              </button>
+            </div>
+
+            <!-- Connected View -->
+            <div id="sessionConnectedCard" style="display: none; text-align: center; padding: 2rem 1rem;">
+              <div style="font-size: 3rem; color: #22c55e; margin-bottom: 0.75rem;"><i class="fa-solid fa-circle-check"></i></div>
+              <h3 style="font-weight: 800; margin-bottom: 4px;">WhatsApp Connected Successfully</h3>
+              <p style="font-size: 1.2rem; font-weight: 700; color: #f59e0b; margin-bottom: 1rem;" id="sessionConnectedPhone">+91 XXXXXXXXXX</p>
+              <p style="color: var(--text-secondary); font-size: 0.875rem; max-width: 600px; margin: 0 auto 1.5rem;">
+                This WhatsApp session is active and listening! Every incoming message will automatically be analyzed by your <strong>2-Service AI Sales Agent</strong> and answered with a realistic ~10s human typing presence.
+              </p>
+              <button class="btn-brand" style="background: rgba(239, 68, 68, 0.2); color: #ef4444;" onclick="deleteActiveSession()">
+                <i class="fa-solid fa-power-off me-1"></i> Log Out & Re-link
+              </button>
+            </div>
+
+            <!-- Scanner & Pairing Box (When not connected) -->
+            <div id="sessionScannerGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 2rem; align-items: center;">
+              
+              <!-- Column 1: QR Code Scanner -->
+              <div style="text-align: center; border-right: 1px solid var(--border); padding-right: 1.5rem;">
+                <h5 style="font-weight: 700; margin-bottom: 6px;"><i class="fa-solid fa-qrcode text-warning me-1"></i> 1. Scan QR Code</h5>
+                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px;">
+                  WhatsApp ➡️ <strong>Linked Devices</strong> ➡️ <strong>Link a device</strong> se scan karein:
+                </p>
+                <div class="scanner-white-box">
+                  <img id="activeQrImage" src="/api/devices/default/qr" alt="WhatsApp QR Code Scanner">
+                  <div style="color: #0b1329; font-weight: 700; font-size: 0.8rem; margin-top: 8px;" id="qrStatusLabel">Live Scanner Ready</div>
+                </div>
+                <div style="margin-top: 14px; display: flex; justify-content: center; gap: 8px;">
+                  <button class="btn-brand" style="background: transparent; border: 1px solid var(--border); color: var(--text-primary); font-size: 0.8rem;" onclick="refreshActiveQR()">
+                    <i class="fa-solid fa-arrows-rotate me-1"></i> Refresh QR
+                  </button>
+                  <a id="activeQrFullscreen" href="/api/devices/default/qr" target="_blank" class="btn-brand" style="font-size: 0.8rem;">
+                    <i class="fa-solid fa-expand me-1"></i> Fullscreen QR
+                  </a>
+                </div>
+              </div>
+
+              <!-- Column 2: 8-Digit Pairing Code -->
+              <div>
+                <h5 style="font-weight: 700; margin-bottom: 6px;"><i class="fa-solid fa-key text-info me-1"></i> 2. Ya 8-Digit Code Se Connect Karein</h5>
+                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 14px;">
+                  Agar camera kaam nahi kar raha to mobile number daal kar code prapt karein:
+                </p>
+                <div style="display: flex; gap: 8px; margin-bottom: 1rem;">
+                  <div style="display: flex; align-items: center; background: var(--bg-white); border: 1px solid var(--border); border-radius: 8px; padding: 0 12px; font-weight: 700; color: var(--text-muted);">
+                    +91
+                  </div>
+                  <input type="text" id="phoneInput" class="form-control" placeholder="10-digit number (e.g. 8005844014)..." value="8005844014">
+                  <button class="btn-brand" onclick="requestPairingCode()">Get Code</button>
+                </div>
+
+                <div id="pairingCodeResult" style="display: none; background: var(--bg-white); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 12px; padding: 1.25rem; text-align: center;">
+                  <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">WhatsApp me ye 8-digit code dalein:</div>
+                  <div class="code-display" id="pairingCodeDisplay">--------</div>
+                  <div style="font-size: 0.75rem; color: #f59e0b; margin-top: 8px; line-height: 1.4;">
+                    WhatsApp ➡️ Linked Devices ➡️ Link a Device ➡️ <strong>"Link with phone number instead"</strong> par tap karke ye code daalein.
+                  </div>
+                </div>
+
+                <div id="pairingCodeError" style="display: none; color: #ef4444; font-size: 0.8rem; margin-top: 8px;"></div>
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </section>
+
+      <!-- ==================== VIEW 3: CHATS & SIMULATOR ==================== -->
+      <section id="view-chats" class="app-view" style="display: none;">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <i class="fa-solid fa-comments text-info"></i> WhatsApp AI Sales Simulator
+            </div>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">Simulate incoming client questions</span>
+          </div>
+
+          <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem;">
+            Test how the AI sells <strong>Web Development</strong> and <strong>Performance Marketing</strong> naturally without robotic symbols or pushy sales pitches:
+          </p>
+
+          <div style="display: flex; gap: 8px; margin-bottom: 1.25rem;">
+            <input type="text" id="chatSimulatorInput" class="form-control" placeholder="Type customer message (e.g. bhai website banwani thi kitna kharcha aayega?)..." value="bhai website banwani thi kitna kharcha aayega">
+            <button class="btn-brand" onclick="runChatSimulator()">
+              <i class="fa-solid fa-paper-plane me-1"></i> Send
+            </button>
+          </div>
+
+          <div id="simulatorOutputCard" style="display: none; background: var(--bg-light); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem;">
+            <div style="font-size: 0.75rem; font-weight: 700; color: #38bdf8; margin-bottom: 6px;">AI Sales Representative (Real Human Tone):</div>
+            <div id="simulatorOutputText" style="font-size: 0.95rem; line-height: 1.6; color: var(--text-primary); font-weight: 500;"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== VIEW 4: 2-SERVICE AI SALES ENGINE ==================== -->
+      <section id="view-ai" class="app-view" style="display: none;">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <i class="fa-solid fa-robot text-success"></i> 2-Service Catalog Architecture
+            </div>
+            <span class="badge" style="background: rgba(34, 197, 94, 0.15); color: #22c55e; font-weight: 700; padding: 4px 10px; border-radius: 6px;">
+              Strictly 2 Services Active
+            </span>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
+            
+            <div style="background: var(--bg-light); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;">
+              <h4 style="color: #38bdf8; font-weight: 800; margin-bottom: 6px;">Service 1: Web Development</h4>
+              <div style="font-size: 1.25rem; font-weight: 800; color: #22c55e; margin-bottom: 12px;">₹5,000 – ₹10,000</div>
+              <ul style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.8; padding-left: 20px;">
+                <li>Professional business website for doctors, local shops & professionals.</li>
+                <li>Mobile-responsive modern design.</li>
+                <li>Basic SEO setup & Google indexing.</li>
+                <li>Direct WhatsApp & Call click-to-chat integration.</li>
+                <li>Pricing Tier 1 (Simple 1-3 pages): ₹5,000 – ₹6,500.</li>
+                <li>Pricing Tier 2 (Medium business): ₹6,500 – ₹8,000.</li>
+                <li>Pricing Tier 3 (Advanced features): ₹8,000 – ₹10,000.</li>
+              </ul>
+            </div>
+
+            <div style="background: var(--bg-light); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;">
+              <h4 style="color: #f59e0b; font-weight: 800; margin-bottom: 6px;">Service 2: Performance Marketing</h4>
+              <div style="font-size: 1.25rem; font-weight: 800; color: #22c55e; margin-bottom: 12px;">₹5,000 – ₹8,000</div>
+              <ul style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.8; padding-left: 20px;">
+                <li>Meta (Facebook/Instagram) & Google Ads campaign setup.</li>
+                <li>Audience targeting & demographic research.</li>
+                <li>Ad creative copy & optimization for inquiries.</li>
+                <li>Direct WhatsApp lead generation campaigns.</li>
+                <li>Basic campaign setup: ₹5,000 – ₹6,000.</li>
+                <li>Medium ongoing optimization: ₹6,000 – ₹7,000.</li>
+                <li>High-scale advertising support: ₹7,000 – ₹8,000.</li>
+              </ul>
+            </div>
+
+          </div>
+
+          <div style="margin-top: 1.5rem; background: var(--bg-white); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem;">
+            <h5 style="font-weight: 700; color: var(--text-primary); margin-bottom: 6px;">Automated Sales Pipeline Rules:</h5>
+            <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6;">
+              When a prospect replies to the initial 2-service menu, the AI analyzes their actual message, determines whether they need website or ads, asks clarifying questions (pages, business type, city), and quotes a customized price without sounding robotic.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== VIEW 5: LEADS & CALENDAR ==================== -->
+      <section id="view-leads" class="app-view" style="display: none;">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <i class="fa-solid fa-calendar-days text-success"></i> Captured Leads & Scheduled Events
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <a id="btnSyncGoogleCal" href="#" target="_blank" class="btn-brand" style="font-size: 0.8rem;">
+                <i class="fa-brands fa-google me-1"></i> Sync Google Calendar
+              </a>
+              <button class="btn-brand" style="background: transparent; border: 1px solid var(--border); color: var(--text-primary); font-size: 0.8rem;" onclick="copyIcalLink()">
+                <i class="fa-solid fa-link me-1"></i> Copy iCal Feed
+              </button>
             </div>
           </div>
 
-          <div id="devicePairError" class="small text-danger mt-2" style="display:none;"></div>
+          <h5 style="font-weight: 700; font-size: 0.95rem; margin-bottom: 0.75rem;">1. Captured Business Inquiries</h5>
+          <div style="overflow-x: auto; margin-bottom: 2rem;">
+            <table class="openwa-table">
+              <thead>
+                <tr>
+                  <th>Client Name</th>
+                  <th>Phone Number</th>
+                  <th>WhatsApp Source</th>
+                  <th>Lead Status</th>
+                  <th>Captured Notes</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody id="leadsTableBody">
+                <!-- Dynamically rendered -->
+              </tbody>
+            </table>
+          </div>
+
+          <h5 style="font-weight: 700; font-size: 0.95rem; margin-bottom: 0.75rem;">2. Calendar Events (Classes, Gym, Meetings)</h5>
+          <div id="eventsContainer" style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="color: var(--text-muted); font-size: 0.85rem;">No scheduled events yet. Incoming WhatsApp messages mentioning meetings, classes, or gym will auto-appear here.</div>
+          </div>
         </div>
+      </section>
 
-      </div>
+      <!-- ==================== VIEW 6: API KEYS ==================== -->
+      <section id="view-keys" class="app-view" style="display: none;">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <i class="fa-solid fa-key text-warning"></i> OpenRouter & AI Model Settings
+            </div>
+            <span class="badge" style="background: rgba(34, 197, 94, 0.15); color: #22c55e; font-weight: 700; padding: 4px 10px; border-radius: 6px;">
+              Built-in Key Active
+            </span>
+          </div>
 
-    </div>
+          <div style="max-width: 600px;">
+            <div style="margin-bottom: 1rem;">
+              <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; display: block;">OpenRouter API Key (Optional Override):</label>
+              <input type="password" id="keyOpenRouter" class="form-control" placeholder="sk-or-v1-...">
+            </div>
 
-    <!-- Live Human AI Chat Simulator -->
-    <div class="card p-4 mb-4 border-primary">
-      <h5 class="fw-bold text-primary mb-1"><i class="fa-solid fa-comments me-2"></i>Test AI Sales Agent (Live Simulator)</h5>
-      <p class="text-secondary small mb-3">
-        Test how the AI sells Web Development (₹5k-₹10k) and Performance Marketing (₹5k-₹8k) with realistic thinking and no robotic symbols:
-      </p>
-      
-      <div class="input-group mb-3">
-        <input type="text" id="testMsgInput" class="form-control bg-dark text-light border-secondary" placeholder="Type customer message (e.g. website banwani hai kitna kharcha aayega? / marketing karwani hai)..." value="website banwani hai kitna kharcha aayega">
-        <button class="btn btn-primary fw-bold" onclick="sendTestChat()"><i class="fa-solid fa-paper-plane me-1"></i> Send Test Message</button>
-      </div>
+            <div style="margin-bottom: 1.25rem;">
+              <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; display: block;">Active AI Model:</label>
+              <select id="selectModel" class="form-select">
+                <option value="deepseek/deepseek-chat">DeepSeek V3 (Recommended for Sales)</option>
+                <option value="meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B</option>
+                <option value="openai/gpt-4o-mini">OpenAI GPT-4o-mini</option>
+              </select>
+            </div>
 
-      <div id="chatReplyBox" class="p-3 human-chat-box" style="display:none; font-size: 15px; line-height: 1.6;">
-        <div class="text-secondary small mb-1">AI Sales Representative:</div>
-        <div id="chatReplyText" class="text-light fw-semibold"></div>
-      </div>
-    </div>
-
-    <!-- OpenRouter & AI Settings -->
-    <div class="card p-3 mb-4 border-secondary">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <h6 class="fw-bold text-light mb-0"><i class="fa-solid fa-key text-warning me-2"></i>OpenRouter AI Key Settings</h6>
-        <span class="badge bg-success small">Built-in Key Active</span>
-      </div>
-      <div class="row g-2 mb-2">
-        <div class="col-md-7">
-          <input type="password" id="openrouterKeyInput" class="form-control bg-dark text-light border-secondary" placeholder="Custom OpenRouter Key (Optional)...">
+            <button class="btn-brand" onclick="saveApiKeys()">
+              <i class="fa-solid fa-floppy-disk me-1"></i> Save Configuration
+            </button>
+            <div id="saveKeyAlert" style="display: none; margin-top: 10px; font-size: 0.85rem;"></div>
+          </div>
         </div>
-        <div class="col-md-5">
-          <select id="openrouterModelSelect" class="form-select bg-dark text-light border-secondary">
-            <option value="deepseek/deepseek-chat">DeepSeek V3 (Recommended)</option>
-            <option value="meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B</option>
-            <option value="openai/gpt-4o-mini">OpenAI GPT-4o-mini</option>
-          </select>
+      </section>
+
+      <!-- ==================== VIEW 7: SYSTEM LOGS ==================== -->
+      <section id="view-logs" class="app-view" style="display: none;">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <i class="fa-solid fa-terminal text-success"></i> Live System & Activity Logs
+            </div>
+            <span style="font-size: 0.75rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;" id="logsSessionTag">All Sessions</span>
+          </div>
+
+          <div id="terminalLogBox" style="background: #020617; border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; max-height: 400px; overflow-y: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.825rem; line-height: 1.6;">
+            <div style="color: var(--text-muted);">Listening for incoming messages and connection updates...</div>
+          </div>
         </div>
-      </div>
-      <div class="d-flex justify-content-end">
-        <button class="btn btn-sm btn-outline-info fw-bold" onclick="saveOpenRouterKey()"><i class="fa-solid fa-floppy-disk me-1"></i> Save Key</button>
-      </div>
-      <div id="keyAlert" class="small mt-2" style="display:none;"></div>
-    </div>
+      </section>
 
-    <!-- Live Activity Logs -->
-    <div class="card p-3">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <h6 class="fw-bold text-light mb-0"><i class="fa-solid fa-clock-rotate-left me-2"></i>Live Multi-Device Activity Logs</h6>
-        <span class="text-secondary small" id="activeDeviceLogLabel">All Devices</span>
-      </div>
-      <div id="logsContainer" class="p-2 bg-dark rounded border border-secondary" style="max-height: 250px; overflow-y: auto; font-family: monospace; font-size: 13px;">
-        <div class="text-muted">Listening for incoming WhatsApp messages across connected devices...</div>
-      </div>
-    </div>
-
+    </main>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- SCRIPT LOGIC -->
   <script>
-    let activeDeviceId = 'default';
-    let cachedDevices = [];
+    let activeSessionId = 'default';
+    let cachedSessions = [];
 
-    function selectDevice(id) {
-      activeDeviceId = id;
-      renderDeviceTabs();
-      updateActiveDeviceView();
+    function navigateTo(viewName) {
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.app-view').forEach(el => el.style.display = 'none');
+      
+      const navEl = document.getElementById('nav-' + viewName);
+      const viewEl = document.getElementById('view-' + viewName);
+      if (navEl) navEl.classList.add('active');
+      if (viewEl) viewEl.style.display = 'block';
+
+      const names = {
+        'dashboard': 'Dashboard',
+        'sessions': 'WhatsApp Sessions & Scanners',
+        'chats': 'Live Chats & Simulator',
+        'ai': '2-Service AI Sales Engine',
+        'leads': 'Leads & Schedule',
+        'keys': 'API Keys & Models',
+        'logs': 'Live Activity Logs'
+      };
+      document.getElementById('breadcrumb-page').innerText = names[viewName] || viewName;
+    }
+
+    function toggleTheme() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme');
+      const next = current === 'light' ? 'dark' : 'light';
+      html.setAttribute('data-theme', next);
+      document.getElementById('themeIcon').className = next === 'light' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+      document.getElementById('themeLabel').innerText = next === 'light' ? 'Light Theme' : 'Dark Theme';
+    }
+
+    function toggleSidebar() {
+      document.getElementById('appSidebar').classList.toggle('open');
+    }
+
+    function selectSession(id) {
+      activeSessionId = id;
+      renderSessionTabs();
+      updateSessionView();
     }
 
     function refreshActiveQR() {
-      const img = document.getElementById('deviceQrImage');
-      if (img) {
-        img.src = '/api/devices/' + activeDeviceId + '/qr?t=' + Date.now();
-      }
-      const fsLink = document.getElementById('fullscreenQrLink');
-      if (fsLink) {
-        fsLink.href = '/api/devices/' + activeDeviceId + '/qr';
-      }
+      const img = document.getElementById('activeQrImage');
+      if (img) img.src = '/api/devices/' + activeSessionId + '/qr?t=' + Date.now();
+      const fs = document.getElementById('activeQrFullscreen');
+      if (fs) fs.href = '/api/devices/' + activeSessionId + '/qr';
     }
 
-    function renderDeviceTabs() {
-      const container = document.getElementById('deviceTabsContainer');
-      if (!container || !cachedDevices.length) return;
+    function renderSessionTabs() {
+      const container = document.getElementById('sessionTabsBar');
+      if (!container || !cachedSessions.length) return;
 
-      container.innerHTML = cachedDevices.map(function(d) {
-        const isActive = d.id === activeDeviceId;
-        let badgeHtml = '';
-        if (d.status === 'connected') {
-          badgeHtml = '<span class="badge bg-success ms-1"><i class="fa-solid fa-check"></i> Connected</span>';
-        } else if (d.hasQR || d.status === 'qr_ready') {
-          badgeHtml = '<span class="badge bg-warning text-dark ms-1">Scan QR</span>';
-        } else {
-          badgeHtml = '<span class="badge bg-secondary ms-1">Connecting</span>';
-        }
+      container.innerHTML = cachedSessions.map(function(s) {
+        const isActive = s.id === activeSessionId;
+        let badge = s.status === 'connected' ? '<span class="badge" style="background: rgba(34, 197, 94, 0.2); color: #22c55e;">Connected</span>'
+                  : s.hasQR ? '<span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b;">Scan QR</span>'
+                  : '<span class="badge" style="background: rgba(148, 163, 184, 0.2); color: #94a3b8;">Connecting</span>';
 
-        return '<button class="device-tab-btn ' + (isActive ? 'active' : '') + '" onclick="selectDevice(\\'' + d.id + '\\')">' +
-          '<i class="fa-solid fa-mobile-screen"></i> ' + d.label + ' ' + badgeHtml +
+        return '<button class="device-tab-btn ' + (isActive ? 'active' : '') + '" onclick="selectSession(\\'' + s.id + '\\')">' +
+          '<i class="fa-solid fa-mobile-screen"></i> ' + s.label + ' ' + badge +
           '</button>';
       }).join('');
     }
 
-    function updateActiveDeviceView() {
-      const dev = cachedDevices.find(function(d) { return d.id === activeDeviceId; }) || cachedDevices[0];
-      if (!dev) return;
+    function updateSessionView() {
+      const s = cachedSessions.find(function(item) { return item.id === activeSessionId; }) || cachedSessions[0];
+      if (!s) return;
 
-      activeDeviceId = dev.id;
-      document.getElementById('activeDeviceTitle').innerText = dev.label;
-      
-      const badge = document.getElementById('activeDeviceStatusBadge');
-      const connView = document.getElementById('connectedDeviceView');
-      const scanView = document.getElementById('scannerDeviceView');
-      const qrImg = document.getElementById('deviceQrImage');
-      const fsLink = document.getElementById('fullscreenQrLink');
+      activeSessionId = s.id;
+      document.getElementById('activeSessionTitle').innerText = s.label;
+      document.getElementById('activeSessionId').innerText = 'ID: ' + s.id;
 
-      fsLink.href = '/api/devices/' + dev.id + '/qr';
+      const connCard = document.getElementById('sessionConnectedCard');
+      const scanGrid = document.getElementById('sessionScannerGrid');
+      const qrImg = document.getElementById('activeQrImage');
+      const fsLink = document.getElementById('activeQrFullscreen');
 
-      if (dev.status === 'connected') {
-        badge.className = 'badge bg-success badge-status';
-        badge.innerHTML = '<i class="fa-solid fa-circle-check me-1"></i> Connected';
-        connView.style.display = 'block';
-        scanView.style.display = 'none';
-        document.getElementById('connectedNumberText').innerText = dev.connectedNumber || 'Active';
+      fsLink.href = '/api/devices/' + s.id + '/qr';
+
+      if (s.status === 'connected') {
+        connCard.style.display = 'block';
+        scanGrid.style.display = 'none';
+        document.getElementById('sessionConnectedPhone').innerText = s.connectedNumber || 'Active';
       } else {
-        connView.style.display = 'none';
-        scanView.style.display = 'flex';
+        connCard.style.display = 'none';
+        scanGrid.style.display = 'grid';
 
-        if (dev.hasQR || dev.status === 'qr_ready') {
-          badge.className = 'badge bg-warning text-dark badge-status';
-          badge.innerHTML = '<i class="fa-solid fa-qrcode me-1"></i> Ready to Scan';
-          document.getElementById('qrLoadingText').innerText = 'Live Scanner Ready (Scan with Phone)';
-        } else {
-          badge.className = 'badge bg-secondary badge-status';
-          badge.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Starting Scanner...';
-          document.getElementById('qrLoadingText').innerText = 'Starting Scanner...';
+        if (!qrImg.src.includes('/api/devices/' + s.id + '/qr')) {
+          qrImg.src = '/api/devices/' + s.id + '/qr?t=' + Date.now();
         }
 
-        // Only reload QR image every 5 seconds or if src does not match
-        const expectedSrc = '/api/devices/' + dev.id + '/qr';
-        if (!qrImg.src.includes('/api/devices/' + dev.id + '/qr')) {
-          qrImg.src = expectedSrc + '?t=' + Date.now();
-        }
+        document.getElementById('qrStatusLabel').innerText = s.hasQR ? 'Live Scanner Ready (Scan from Phone)' : 'Starting Scanner...';
 
-        if (dev.pairingCode) {
-          document.getElementById('devicePairResultBox').style.display = 'block';
-          document.getElementById('devicePairCodeDisplay').innerText = dev.pairingCode;
+        if (s.pairingCode) {
+          document.getElementById('pairingCodeResult').style.display = 'block';
+          document.getElementById('pairingCodeDisplay').innerText = s.pairingCode;
         }
       }
 
-      // Render logs for active device
-      if (dev.recentLogs && dev.recentLogs.length > 0) {
-        document.getElementById('logsContainer').innerHTML = dev.recentLogs.map(function(l) {
-          return '<div class="py-1 border-bottom border-secondary border-opacity-25">' +
-            '<span class="text-secondary">[' + l.time + ']</span> <span class="badge bg-secondary me-1">' + dev.label + '</span> ' + l.text +
+      // Render Dashboard table
+      document.getElementById('dashSessionsTableBody').innerHTML = cachedSessions.map(function(item) {
+        return '<tr>' +
+          '<td><code>' + item.id + '</code></td>' +
+          '<td><strong>' + item.label + '</strong></td>' +
+          '<td>' + (item.status === 'connected' ? '<span class="status-pill connected">Connected</span>' : '<span class="status-pill ready">Scan QR</span>') + '</td>' +
+          '<td>' + (item.connectedNumber || '—') + '</td>' +
+          '<td>' + (item.totalQueriesProcessed || 0) + '</td>' +
+          '<td><button class="btn-brand" style="padding: 4px 8px; font-size: 0.75rem;" onclick="selectSession(\\'' + item.id + '\\'); navigateTo(\\'sessions\\');">Open Scanner</button></td>' +
+          '</tr>';
+      }).join('');
+
+      // Render logs
+      if (s.recentLogs && s.recentLogs.length > 0) {
+        document.getElementById('terminalLogBox').innerHTML = s.recentLogs.map(function(l) {
+          return '<div style="padding: 2px 0; border-bottom: 1px solid rgba(51, 65, 85, 0.4);">' +
+            '<span style="color: #64748b;">[' + l.time + ']</span> <span style="color: #38bdf8;">[' + s.label + ']</span> ' + l.text +
             '</div>';
         }).join('');
       }
     }
 
-    async function loadDevices() {
+    async function loadData() {
       try {
         const res = await fetch('/api/devices');
         const list = await res.json();
         if (Array.isArray(list) && list.length > 0) {
-          cachedDevices = list;
-          document.getElementById('globalDeviceCountBadge').innerHTML = '<i class="fa-solid fa-mobile-screen me-1"></i> ' + list.length + ' Device(s)';
-          renderDeviceTabs();
-          updateActiveDeviceView();
+          cachedSessions = list;
+          document.getElementById('dashTotalSessions').innerText = list.length;
+          
+          let totalQueries = 0;
+          let anyConnected = false;
+          list.forEach(function(i) {
+            totalQueries += (i.totalQueriesProcessed || 0);
+            if (i.status === 'connected') anyConnected = true;
+          });
+          document.getElementById('dashTotalMessages').innerText = totalQueries;
+
+          const pill = document.getElementById('globalStatusBadge');
+          if (anyConnected) {
+            pill.className = 'status-pill connected';
+            pill.innerHTML = '<i class="fa-solid fa-circle-check"></i> ' + list.length + ' Session(s) Active';
+          } else {
+            pill.className = 'status-pill ready';
+            pill.innerHTML = '<i class="fa-solid fa-qrcode"></i> Ready to Connect';
+          }
+
+          renderSessionTabs();
+          updateSessionView();
+        }
+
+        // Fetch leads
+        const lRes = await fetch('/api/leads');
+        const lData = await lRes.json();
+        if (lData && lData.leads) {
+          document.getElementById('dashTotalLeads').innerText = lData.leads.length;
+          const body = document.getElementById('leadsTableBody');
+          if (lData.leads.length === 0) {
+            body.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No leads captured yet. As clients chat on WhatsApp, leads appear here.</td></tr>';
+          } else {
+            body.innerHTML = lData.leads.map(function(ld) {
+              return '<tr>' +
+                '<td><strong>' + (ld.name || 'Client') + '</strong></td>' +
+                '<td>+' + (ld.phone || ld.senderPhone || '') + '</td>' +
+                '<td>' + (ld.device || 'Primary') + '</td>' +
+                '<td><span class="badge" style="background: rgba(34, 197, 94, 0.2); color: #22c55e;">' + (ld.status || 'Inquired') + '</span></td>' +
+                '<td style="max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">' + (ld.notes || '') + '</td>' +
+                '<td>' + (ld.createdAt ? new Date(ld.createdAt).toLocaleDateString() : '') + '</td>' +
+                '</tr>';
+            }).join('');
+          }
+        }
+
+        // Fetch calendar
+        const cRes = await fetch('/api/calendar');
+        const cData = await cRes.json();
+        if (cData && cData.events) {
+          document.getElementById('btnSyncGoogleCal').href = cData.googleCalendarSubscribeUrl;
+          window.icalUrl = cData.syncLink;
+          if (cData.events.length > 0) {
+            document.getElementById('eventsContainer').innerHTML = cData.events.map(function(ev) {
+              return '<div style="background: var(--bg-light); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">' +
+                '<div><strong style="color: #38bdf8;">' + ev.title + '</strong><div style="font-size: 0.8rem; color: var(--text-muted);">' + ev.timing + '</div></div>' +
+                '<a href="https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(ev.title) + '" target="_blank" class="btn-brand" style="font-size: 0.75rem;">+ Add</a>' +
+                '</div>';
+            }).join('');
+          }
         }
       } catch {}
     }
 
-    async function showAddDevicePrompt() {
-      const name = prompt('WhatsApp Number Ka Naam / Label Dalein:\\n(Jaise: "Dost Ka Number", "Mera Dusra Number", "Sales WhatsApp")', 'Dost Ka Number');
+    async function addNewSession() {
+      const name = prompt('WhatsApp Session Name / Label Dalein:\\n(e.g. "Dost Ka Number", "Support Desk", "Sales Team")', 'Dost Ka Number');
       if (!name || !name.trim()) return;
 
       try {
@@ -1261,59 +2010,54 @@ app.get('/', (req, res) => {
         });
         const data = await res.json();
         if (data.success && data.device) {
-          activeDeviceId = data.device.id;
-          await loadDevices();
-          alert('✅ Naya Device add ho gaya! Ab samne wale QR code scanner se dost ka WhatsApp link kar sakte hain.');
-        } else {
-          alert('Error adding device: ' + (data.error || 'Failed'));
-        }
-      } catch (e) {
-        alert('Network error: ' + e.message);
-      }
-    }
-
-    async function deleteActiveDevice() {
-      if (!confirm('Kya aap sach me is WhatsApp device ko disconnect aur remove karna chahte hain?')) return;
-      try {
-        const res = await fetch('/api/devices/' + activeDeviceId, { method: 'DELETE' });
-        const data = await res.json();
-        if (data.success) {
-          activeDeviceId = 'default';
-          await loadDevices();
+          activeSessionId = data.device.id;
+          await loadData();
+          navigateTo('sessions');
         }
       } catch (e) {
         alert('Error: ' + e.message);
       }
     }
 
-    async function requestDevicePairingCode() {
-      const phoneInput = document.getElementById('phonePairInput').value.trim();
-      const errBox = document.getElementById('devicePairError');
-      const resBox = document.getElementById('devicePairResultBox');
-      const codeDisplay = document.getElementById('devicePairCodeDisplay');
+    async function deleteActiveSession() {
+      if (!confirm('Kya aap is WhatsApp session ko disconnect karna chahte hain?')) return;
+      try {
+        await fetch('/api/devices/' + activeSessionId, { method: 'DELETE' });
+        activeSessionId = 'default';
+        await loadData();
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+
+    async function requestPairingCode() {
+      const phone = document.getElementById('phoneInput').value.trim();
+      const errBox = document.getElementById('pairingCodeError');
+      const resBox = document.getElementById('pairingCodeResult');
+      const disp = document.getElementById('pairingCodeDisplay');
       
-      if (!phoneInput) {
+      if (!phone) {
         errBox.style.display = 'block';
         errBox.innerText = 'Please enter phone number.';
         return;
       }
 
       errBox.style.display = 'none';
-      codeDisplay.innerText = 'FETCHING...';
+      disp.innerText = 'GENERATING...';
       resBox.style.display = 'block';
 
       try {
-        const res = await fetch('/api/devices/' + activeDeviceId + '/pair', {
+        const res = await fetch('/api/devices/' + activeSessionId + '/pair', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: phoneInput })
+          body: JSON.stringify({ phone })
         });
         const data = await res.json();
         if (data.success && data.code) {
-          codeDisplay.innerText = data.code;
+          disp.innerText = data.code;
         } else {
           errBox.style.display = 'block';
-          errBox.innerText = data.error || data.message || 'Failed to generate code. Try again in 5s.';
+          errBox.innerText = data.error || data.message || 'Error generating code. Please retry in 5s.';
           resBox.style.display = 'none';
         }
       } catch (e) {
@@ -1323,56 +2067,65 @@ app.get('/', (req, res) => {
       }
     }
 
-    async function sendTestChat() {
-      const q = document.getElementById('testMsgInput').value.trim();
+    async function runChatSimulator() {
+      const q = document.getElementById('chatSimulatorInput').value.trim();
       if (!q) return;
-      const box = document.getElementById('chatReplyBox');
-      const replyEl = document.getElementById('chatReplyText');
-      box.style.display = 'block';
-      replyEl.innerText = 'Typing... (AI thinking consultative sales reply)';
+      const card = document.getElementById('simulatorOutputCard');
+      const text = document.getElementById('simulatorOutputText');
+      card.style.display = 'block';
+      text.innerText = 'Thinking consultative reply...';
+
       try {
         const res = await fetch('/api/ask', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ question: q })
         });
-        const data = await res.json();
-        replyEl.innerText = data.answer || 'Haan bhai bol.';
+        const d = await res.json();
+        text.innerText = d.answer || 'Haan bhai batao.';
       } catch (e) {
-        replyEl.innerText = 'Error: ' + e.message;
+        text.innerText = 'Error: ' + e.message;
       }
     }
 
-    async function saveOpenRouterKey() {
-      const key = document.getElementById('openrouterKeyInput').value.trim();
-      const model = document.getElementById('openrouterModelSelect').value;
-      const alertBox = document.getElementById('keyAlert');
+    async function saveApiKeys() {
+      const key = document.getElementById('keyOpenRouter').value.trim();
+      const model = document.getElementById('selectModel').value;
+      const alertBox = document.getElementById('saveKeyAlert');
+
       try {
-        const res = await fetch('/api/config', {
+        await fetch('/api/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ openrouterApiKey: key, openrouterModel: model })
         });
         alertBox.style.display = 'block';
-        alertBox.className = 'small mt-2 text-success';
-        alertBox.innerText = '✅ Key saved successfully!';
+        alertBox.style.color = '#22c55e';
+        alertBox.innerText = '✅ API Keys & Model configuration saved!';
       } catch (e) {
         alertBox.style.display = 'block';
-        alertBox.className = 'small mt-2 text-danger';
+        alertBox.style.color = '#ef4444';
         alertBox.innerText = 'Error: ' + e.message;
       }
     }
 
-    // Auto Refresh device status every 3 seconds
-    setInterval(loadDevices, 3000);
-    loadDevices();
+    function copyIcalLink() {
+      const url = window.icalUrl || (window.location.origin + '/calendar.ics');
+      navigator.clipboard.writeText(url).then(function() {
+        alert('Copied Calendar iCal link! Paste this into Google Calendar -> Other Calendars (+) -> From URL.');
+      });
+    }
 
-    // Refresh QR code image every 6 seconds if not connected
+    // Auto poll every 3 seconds
+    setInterval(loadData, 3000);
+    loadData();
+
+    // Auto refresh active QR every 6s if not connected
     setInterval(function() {
-      const dev = cachedDevices.find(function(d) { return d.id === activeDeviceId; });
-      if (dev && dev.status !== 'connected') {
-        const img = document.getElementById('deviceQrImage');
-        if (img) img.src = '/api/devices/' + activeDeviceId + '/qr?t=' + Date.now();
+      const s = cachedSessions.find(function(item) { return item.id === activeSessionId; });
+      if (s && s.status !== 'connected') {
+        const img = document.getElementById('activeQrImage');
+        if (img) img.src = '/api/devices/' + activeSessionId + '/qr?t=' + Date.now();
       }
     }, 6000);
   </script>
@@ -1384,9 +2137,11 @@ app.get('/', (req, res) => {
 app.listen(PORT, async () => {
   console.log(`
 ======================================================
-🌐 Multi-Device AI WhatsApp Manager: http://localhost:${PORT}
-⚡ 2-Service Sales Agent (Web Development & Performance Marketing)
-📱 Supports Multiple WhatsApp Numbers (Your number, Friend's number)
+🌐 OpenWA WhatsApp Gateway & AI Sales Manager
+📍 Server: http://localhost:${PORT}
+⚡ Upstream Architecture: https://github.com/rmyndharis/OpenWA.git
+🎯 2-Service AI Sales Agent (Web Development & Performance Marketing)
+📱 Multi-Session Support (User + Friend + Team WhatsApp Numbers)
 ======================================================
 `);
   await startAllWhatsAppSessions();
