@@ -1609,10 +1609,10 @@ app.get('/', (req, res) => {
             <div class="service-pill-box">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                 <strong style="color: #f59e0b; font-size: 1rem;"><i class="fa-solid fa-bullhorn me-1"></i> 2. Performance Marketing</strong>
-                <span style="font-weight: 800; color: #22c55e; font-size: 0.9rem;">₹5,000 – ₹8,000</span>
+                <span style="font-weight: 800; color: #22c55e; font-size: 0.9rem;">Starting ₹8,000 / mo | ₹1,200 / day</span>
               </div>
               <p style="font-size: 0.825rem; color: var(--text-secondary); line-height: 1.5;">
-                Targeted Meta (Facebook/Instagram) & Google ad setup, audience research, creative campaign optimization, verified WhatsApp leads.
+                Targeted Meta & Google ads: ₹1,200/day, 10 Days ₹12,000, 20 Days ₹23,500, Monthly ₹36,000 (or ₹8k fee). Custom days ($N \times ₹1,200$).
               </p>
             </div>
           </div>
@@ -1812,15 +1812,15 @@ app.get('/', (req, res) => {
 
             <div style="background: var(--bg-light); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;">
               <h4 style="color: #f59e0b; font-weight: 800; margin-bottom: 6px;">Service 2: Performance Marketing</h4>
-              <div style="font-size: 1.25rem; font-weight: 800; color: #22c55e; margin-bottom: 12px;">₹5,000 – ₹8,000</div>
+              <div style="font-size: 1.25rem; font-weight: 800; color: #22c55e; margin-bottom: 12px;">Starting ₹8,000 / mo | ₹1,200 / day</div>
               <ul style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.8; padding-left: 20px;">
-                <li>Meta (Facebook/Instagram) & Google Ads campaign setup.</li>
-                <li>Audience targeting & demographic research.</li>
-                <li>Ad creative copy & optimization for inquiries.</li>
-                <li>Direct WhatsApp lead generation campaigns.</li>
-                <li>Basic campaign setup: ₹5,000 – ₹6,000.</li>
-                <li>Medium ongoing optimization: ₹6,000 – ₹7,000.</li>
-                <li>High-scale advertising support: ₹7,000 – ₹8,000.</li>
+                <li>Meta (Facebook/Instagram) & Google Ads high-conversion campaigns.</li>
+                <li>Daily Ad Run: ₹1,200 / day (₹1,000 Meta ad budget + 20% management commission).</li>
+                <li>10 Days Plan: ₹12,000 (₹10,000 ad budget + ₹2,000 commission).</li>
+                <li>20 Days Plan: ₹23,500 (₹20,000 ad budget + discounted commission).</li>
+                <li>1 Month All-Inclusive: ₹36,000 (₹30,000 ad budget + 25% agency fee discounted).</li>
+                <li>Agency Management Only: Starting ₹8,000 / month (client pays ad spend directly).</li>
+                <li>Custom Ad Run Days: Exact calculation ($N \times ₹1,200$ with transparent breakdown).</li>
               </ul>
             </div>
 

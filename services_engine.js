@@ -159,10 +159,19 @@ When a new prospect greets ('Hi', 'Hello', 'Hey', 'Namaste') or is contacted for
 ============================================================
 PRICING RULES & LOGIC:
 ============================================================
-- Web Development: Starting ₹5,000 up to ₹10,000 (Simple: ₹5,000–₹6,500; Medium: ₹6,500–₹8,000; Advanced: ₹8,000–₹10,000).
-- Performance Marketing: Starting ₹5,000 up to ₹8,000 (Basic: ₹5,000–₹6,000; Medium: ₹6,000–₹7,000; Higher: ₹7,000–₹8,000).
+- Web Development: Starting ₹5,000 up to ₹10,000 (Simple 1-3 pages: ₹5,000–₹6,500; Medium business: ₹6,500–₹8,000; Advanced: ₹8,000–₹10,000).
+- Performance Marketing (Meta & Google Ads Campaign Setup, Daily Optimization & Lead Generation):
+  * Starting Price for 1 Month Management is ₹8,000 (Agency Management-only starting fee).
+  * Daily Rate Formula: Daily Meta Ad Budget ₹1,000 + 20% Agency/Management Commission (₹200) = ₹1,200 per day total.
+  * 1 Day / Daily Trial: ₹1,200/day (Ad budget ₹1,000 + ₹200 management/setup commission).
+  * 10 Days Plan: ₹12,000 total (₹10,000 Meta ad budget + 20% agency commission ₹2,000).
+  * 20 Days Plan: ₹23,500 total (₹20,000 ad budget + discounted agency commission ₹3,500).
+  * 1 Month (30 Days) Full All-Inclusive Package: ₹36,000 total (₹30,000 Meta ad budget + 25% agency fee discounted to ₹36,000 total), OR Agency Management Only starting at ₹8,000/month.
+  * Custom Ad Run Day Rule: If the prospect asks for a custom number of days (e.g. 5 days, 7 days, 15 days) or mentions "Custom add run day" / "custom ad", calculate:
+    Total Amount = (Days * ₹1,000 Meta Ad Spend) + 20% Agency Commission (Days * ₹200) = Days * ₹1,200.
+    Always explain this transparent breakdown so the client knows their daily ad budget and management commission!
 - Prices are reasonable estimates based on project scope, NOT rigid fixed barriers.
-- NEVER randomly quote the highest price first. Start with the scope and explain why the pricing fits their needs.
+- NEVER randomly quote the highest price first. Explain the daily ad spend and commission transparently.
 
 ============================================================
 OBJECTION HANDLING (LOW PRESSURE & HIGH TRUST):
@@ -245,7 +254,7 @@ function executeFallbackLogic(userMessage, history = []) {
     lower.includes('what do you provide') ||
     lower.includes('what service')
   ) {
-    return 'Hum businesses ko grow karne ke liye exclusively 2 services provide karte hain:\n\n1. Web Development: Professional business website (100% mobile-friendly, fast loading, WhatsApp integration) - Starting from ₹5,000.\n2. Performance Marketing: Google aur Meta ads campaign (targeted reach aur high-quality leads) - Starting from ₹5,000.\n\nAapko inme se kis service me zyada interest hai?';
+    return 'Hum businesses ko grow karne ke liye exclusively 2 services provide karte hain:\n\n1. Web Development: Professional business website (100% mobile-friendly, fast loading, WhatsApp integration) - Starting from ₹5,000.\n2. Performance Marketing: Google aur Meta ads campaign (targeted reach aur high-quality leads) - Starting from ₹8,000/month (ya ₹1,200/day plan).\n\nAapko inme se kis service me zyada interest hai?';
   }
 
   // 3. Objection: "Website already hai"
@@ -267,7 +276,7 @@ function executeFallbackLogic(userMessage, history = []) {
     lower.includes('customized plan')
   ) {
     if (lower.includes('marketing') || lower.includes('ad')) {
-      return `Recommended Service: Performance Marketing\n\nWhat we will do:\n- Google aur Meta (Facebook & Instagram) ads campaign setup\n- Targeted audience aur local location targeting\n- Ad creative guidance aur high-converting copy\n- Daily budget aur lead cost optimization\n- Transparent weekly reporting\n\nTimeline: Campaign goes live in 2 to 3 days\nEstimated Price: ₹5,000 – ₹8,000 (Basic: ₹5,000–₹6,000; Medium: ₹6,000–₹7,000)\n\nProcess:\nStep 1: Goal & target location discussion\nStep 2: Creative & copy preparation\nStep 3: Campaign & tracking setup\nStep 4: Launch\nStep 5: Daily optimization\nStep 6: Weekly review\n\nNext Step: Aapka target location aur daily leads goal kya hai?`;
+      return `Recommended Service: Performance Marketing\n\nWhat we will do:\n- Google aur Meta (Facebook & Instagram) ads campaign setup\n- Targeted audience aur local location targeting\n- Ad creative guidance aur high-converting copy\n- Daily budget aur lead cost optimization\n- Transparent weekly reporting\n\nTimeline: Campaign goes live in 2 to 3 days\nEstimated Price: Starting ₹8,000/month (Agency Management) | All-Inclusive Plans: 10 Days ₹12,000 | 20 Days ₹23,500 | 1 Month ₹36,000 (Daily ₹1,000 Meta ad budget + 20-25% commission)\n\nProcess:\nStep 1: Goal & target location discussion\nStep 2: Creative & copy preparation\nStep 3: Campaign & tracking setup\nStep 4: Launch\nStep 5: Daily optimization\nStep 6: Weekly review\n\nNext Step: Aapka target location aur daily leads goal kya hai?`;
     }
     return `Recommended Service: Web Development\n\nWhat we will do:\n- Professional business website\n- 100% mobile responsive layout\n- Direct WhatsApp chat aur call now button\n- Contact inquiry form aur services showcase\n- Basic SEO setup Google presence ke liye\n\nTimeline: 3 to 5 working days\nEstimated Price: ₹5,000 – ₹10,000 (Simple: ₹5,000–₹6,500; Medium: ₹6,500–₹8,000)\n\nProcess:\nStep 1: Requirement discussion\nStep 2: Website structure & design\nStep 3: Development & integration\nStep 4: Client review & feedback\nStep 5: Final changes\nStep 6: Official launch\n\nNext Step: Aapka business kis type ka hai (clinic, shop, consultancy ya local service)?`;
   }
@@ -346,6 +355,49 @@ function executeFallbackLogic(userMessage, history = []) {
     return `Thank you ji, aapka name aur contact number note kar liya hai! Mere boss verify karke aapse jald connect karenge. Confirmation ke liye aap ${payment.payment_number} par call bhi kar sakte hain.`;
   }
 
+  // 9b. Custom Ad Run Day / Specific Days Query (e.g. "custom add run day", "10 din", "20 din", "7 days", "1 month")
+  const isMarketingContext = lower.includes('marketing') || lower.includes('ad') || lower.includes('meta') || lower.includes('lead') || lower.includes('facebook') || lower.includes('google') || lower.includes('campaign');
+  const dayMatch = lower.match(/\b(\d+)\s*(din|day|days|dino)\b/i);
+
+  if (lower.includes('custom add run day') || lower.includes('custom ad run day') || lower.includes('custom ad') || lower.includes('custom day') || lower.includes('custom days') || lower.includes('custom add')) {
+    if (dayMatch) {
+      const days = parseInt(dayMatch[1], 10);
+      if (days > 0 && days <= 365) {
+        const adBudget = days * 1000;
+        let commission = Math.round(adBudget * 0.20);
+        let total = adBudget + commission;
+        if (days >= 20 && days < 30) total = 23500;
+        if (days >= 30) total = 36000;
+        return `Aapke ${days} Din ke Custom Meta Ad Run ka calculation:\n- Daily Meta Ad Budget: ₹${adBudget.toLocaleString('en-IN')} (₹1,000/day)\n- Agency Setup & Management Commission (20%): ₹${commission.toLocaleString('en-IN')}\n- Total ${days} Days Package: ₹${total.toLocaleString('en-IN')}\n\nIsme targeted audience setup, ad copy, daily optimization aur direct WhatsApp leads included hain. Aapka business kis city/location ko target karega?`;
+      }
+    }
+    return 'Aap jitne din chahein utne din ke liye custom Meta/Google ads run kar sakte hain! Per day Meta ad budget ₹1,000 rehta hai + 20% agency management commission, yaani total ₹1,200 per day. Aapko kitne din (jaise 5 din, 10 din, 15 din ya 20 din) ke liye ad chalana hai?';
+  }
+
+  // Days matched in marketing context (e.g. "10 din ka kitna", "20 din ka plan", "1 day", "5 days")
+  if (dayMatch && (isMarketingContext || lower.includes('kitna') || lower.includes('cost') || lower.includes('plan') || lower.includes('chala') || lower.includes('price') || lower.includes('rate'))) {
+    const days = parseInt(dayMatch[1], 10);
+    if (days === 1) {
+      return '1 Day Meta Ad Run ki cost ₹1,200 rehti hai (₹1,000 Meta ad budget + 20% management setup commission ₹200). Isme targeted audience setup aur ad running included hai. Aap kis product ya service ka ad chalana chahte hain?';
+    } else if (days === 10) {
+      return '10 Days Meta Ad Campaign ki total cost ₹12,000 aayegi:\n- Meta Ad Budget: ₹10,000 (₹1,000/day)\n- 20% Agency Commission: ₹2,000\n- Total: ₹12,000\n\nIsme audience targeting, creative copy aur daily lead optimization shamil hai. Aapka target location kya hai?';
+    } else if (days === 20) {
+      return '20 Days Meta Ad Campaign ki total cost discount ke sath ₹23,500 aayegi:\n- Meta Ad Budget: ₹20,000 (₹1,000/day)\n- Agency Commission (Discounted): ₹3,500\n- Total: ₹23,500\n\nIsme A/B testing, retargeting aur daily lead monitoring shamil hai. Aap daily kitni leads expect kar rahe hain?';
+    } else if (days === 30 || days === 31) {
+      return '1 Month (30 Days) Performance Marketing ke 2 options hain:\n1. Full All-Inclusive Package: ₹36,000 (₹30,000 Meta ad budget + 25% agency fee discount ke sath total ₹36,000).\n2. Agency Management Only: Starting ₹8,000/month (jisme complete campaign setup, daily optimization aur weekly reporting shamil hai, ad budget aap direct pay kar sakte hain).\n\nAapko inme se konsa plan zyada suit karega?';
+    } else if (days > 1 && days <= 365) {
+      const adBudget = days * 1000;
+      const commission = Math.round(adBudget * 0.20);
+      const total = days * 1200;
+      return `${days} Days ke Meta Ad Run ka breakdown:\n- Daily Ad Budget: ₹${adBudget.toLocaleString('en-IN')} (₹1,000/day)\n- 20% Agency Management Commission: ₹${commission.toLocaleString('en-IN')}\n- Total ${days} Days Package: ₹${total.toLocaleString('en-IN')}\n\nIsme targeted audience research, creative copy aur direct WhatsApp lead generation shamil hai. Aapka primary goal kya hai — phone calls ya direct WhatsApp messages?`;
+    }
+  }
+
+  // Monthly inquiry
+  if ((lower.includes('month') || lower.includes('monthly') || lower.includes('mahine') || lower.includes('mahina') || lower.includes('ek mahina') || lower.includes('1 month')) && (isMarketingContext || lower.includes('cost') || lower.includes('price') || lower.includes('kitna') || lower.includes('add') || lower.includes('ad'))) {
+    return '1 Month (30 Days) Performance Marketing ke 2 best options hain:\n\n1. Full All-Inclusive Package: ₹36,000 (₹30,000 Meta ad budget + 25% agency fee discount ke sath total ₹36,000).\n2. Agency Management Only: Starting ₹8,000/month (jisme complete campaign setup, audience targeting, daily optimization aur weekly reporting shamil hai, ad budget aap direct pay kar sakte hain).\n\nAapko inme se konsa option behtar lag raha hai?';
+  }
+
   // 10. Performance Marketing Interest
   if (
     lower.includes('marketing') ||
@@ -357,10 +409,10 @@ function executeFallbackLogic(userMessage, history = []) {
     lower.includes('facebook ad') ||
     lower.includes('meta ad')
   ) {
-    if (lower.includes('price') || lower.includes('rate') || lower.includes('cost') || lower.includes('kitna')) {
-      return 'Performance Marketing ka starting fee ₹5,000 se ₹8,000 tak hota hai requirements ke hisaab se (Basic campaign ₹5,000–₹6,000; medium ₹6,000–₹7,000; advanced setup ₹7,000–₹8,000). Aapka business kis industry ka hai aur target audience local hai ya all-India?';
+    if (lower.includes('price') || lower.includes('rate') || lower.includes('cost') || lower.includes('kitna') || lower.includes('charges')) {
+      return 'Performance Marketing ka starting price 1 Month Management ke liye ₹8,000 se start hota hai, ya Daily Ad Run plan ₹1,200/day hai (₹1,000 Meta ad budget + 20% management commission). Humare paas 10 Days (₹12,000), 20 Days (₹23,500), 1 Month All-Inclusive (₹36,000), aur Custom Days ke plans hain. Aapko kitne din ke liye ads run karne hain?';
     }
-    return 'Performance Marketing me hum Meta aur Google par targeted campaigns setup karte hain taaki aapko quality phone calls aur direct WhatsApp leads mil sakein. Aapka target audience local city hai ya all-India?';
+    return 'Performance Marketing me hum Meta aur Google par targeted campaigns setup karte hain taaki aapko quality phone calls aur direct WhatsApp leads mil sakein. Humare paas Daily (₹1,200/day), 10 Days (₹12,000), 20 Days (₹23,500) aur Monthly (Starting ₹8,000) plans hain. Aapka target audience local city hai ya all-India?';
   }
 
   // 11. Web Development Interest
@@ -378,11 +430,11 @@ function executeFallbackLogic(userMessage, history = []) {
 
   // 12. General Price question
   if (lower.includes('price') || lower.includes('rate') || lower.includes('cost') || lower.includes('charges') || lower.includes('kitna lagega')) {
-    return 'Humari services ka example pricing:\n- Web Development: Starting ₹5,000 se ₹10,000 (scope aur pages ke hisaab se)\n- Performance Marketing: Starting ₹5,000 se ₹8,000 (campaign setup aur management)\n\nAapko inme se kis service ke liye customized quote chahiye?';
+    return 'Humari services ka pricing:\n- Web Development: Starting ₹5,000 se ₹10,000 (scope aur pages ke hisaab se)\n- Performance Marketing: Starting ₹8,000/month (management fee) ya ₹1,200/day (₹1,000 ad budget + 20% commission; 10 days ₹12,000; 1 month ₹36,000 all-inclusive)\n\nAapko inme se kis service ke liye customized quote chahiye?';
   }
 
   // 13. Default consultative reply
-  return 'Hum aapke business ke liye Web Development (starting ₹5,000) aur Performance Marketing (starting ₹5,000) provide karte hain. Aap apne business ke baare me batayein — aapko website banwani hai ya ads ke through leads chahiye?';
+  return 'Hum aapke business ke liye Web Development (starting ₹5,000) aur Performance Marketing (starting ₹8,000/month ya ₹1,200/day) provide karte hain. Aap apne business ke baare me batayein — aapko website banwani hai ya ads ke through leads chahiye?';
 }
 
 module.exports = {
