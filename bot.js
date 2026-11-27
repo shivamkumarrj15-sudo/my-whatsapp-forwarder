@@ -456,6 +456,73 @@ function enqueueHumanReply(sessionObj, remoteJid, senderPhone, incomingText) {
   }, 6000);
 }
 
+// ==================== POSTGRESQL AUTH PERSISTENCE ====================
+let pgPool = null;
+if (process.env.DATABASE_URL) {
+  try {
+    const { Pool } = require('pg');
+    pgPool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
+    });
+    pgPool.query(`
+      CREATE TABLE IF NOT EXISTS baileys_auth_store (
+        session_id TEXT NOT NULL,
+        file_key TEXT NOT NULL,
+        file_data TEXT NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (session_id, file_key)
+      );
+    `).then(() => console.log('📦 [DB] PostgreSQL Baileys Auth Store ready!')).catch(e => console.error('DB Init Error:', e.message));
+  } catch (e) {
+    console.warn('PostgreSQL pool init skipped:', e.message);
+  }
+}
+
+async function restoreSessionFromDb(sessionId, authDir) {
+  if (!pgPool) return;
+  try {
+    const res = await pgPool.query('SELECT file_key, file_data FROM baileys_auth_store WHERE session_id = $1', [sessionId]);
+    if (res.rows.length > 0) {
+      console.log(`📦 [DB] Restoring ${res.rows.length} auth files for session [${sessionId}]...`);
+      for (const row of res.rows) {
+        const filePath = path.join(authDir, row.file_key);
+        fs.writeFileSync(filePath, row.file_data, 'utf8');
+      }
+    }
+  } catch (e) {
+    console.error('DB Restore Error:', e.message);
+  }
+}
+
+async function saveSessionToDb(sessionId, authDir) {
+  if (!pgPool) return;
+  try {
+    if (!fs.existsSync(authDir)) return;
+    const files = fs.readdirSync(authDir);
+    for (const file of files) {
+      if (file.endsWith('.json')) {
+        const content = fs.readFileSync(path.join(authDir, file), 'utf8');
+        await pgPool.query(`
+          INSERT INTO baileys_auth_store (session_id, file_key, file_data, updated_at)
+          VALUES ($1, $2, $3, NOW())
+          ON CONFLICT (session_id, file_key)
+          DO UPDATE SET file_data = EXCLUDED.file_data, updated_at = NOW()
+        `, [sessionId, file, content]);
+      }
+    }
+  } catch (e) {
+    console.error('DB Save Error:', e.message);
+  }
+}
+
+async function clearSessionFromDb(sessionId) {
+  if (!pgPool) return;
+  try {
+    await pgPool.query('DELETE FROM baileys_auth_store WHERE session_id = $1', [sessionId]);
+  } catch {}
+}
+
 async function initSession(sessionId, label = '') {
   if (sessions.has(sessionId)) {
     const existing = sessions.get(sessionId);
@@ -468,6 +535,9 @@ async function initSession(sessionId, label = '') {
     : path.join(AUTH_BASE_DIR, `session_${sessionId}`);
 
   fs.mkdirSync(sessionAuthDir, { recursive: true });
+
+  // Restore creds from PostgreSQL if local files were wiped on container restart
+  await restoreSessionFromDb(sessionId, sessionAuthDir);
 
   const sessionObj = {
     id: sessionId,
@@ -517,7 +587,10 @@ async function initSession(sessionId, label = '') {
 
     sessionObj.sock = sock;
 
-    sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('creds.update', async () => {
+      await saveCreds();
+      saveSessionToDb(sessionId, sessionAuthDir);
+    });
 
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
@@ -551,6 +624,7 @@ async function initSession(sessionId, label = '') {
           sessionObj.qrDataUrl = null;
           sessionObj.qrRaw = null;
           sessionObj.connectedNumber = null;
+          clearSessionFromDb(sessionId);
           try {
             fs.rmSync(sessionAuthDir, { recursive: true, force: true });
           } catch {}
@@ -630,6 +704,7 @@ async function deleteSession(sessionId) {
     try {
       fs.rmSync(s.authDir, { recursive: true, force: true });
     } catch {}
+    clearSessionFromDb(sessionId);
     sessions.delete(sessionId);
   }
   registeredSessions = registeredSessions.filter(s => s.id !== sessionId);
@@ -661,7 +736,59 @@ function getPrimarySession() {
 
 // ==================== EXPRESS WEB DASHBOARD & API ====================
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+
+// Backup all sessions to JSON (Survives container wipes)
+app.get('/api/backup', (req, res) => {
+  const backup = {};
+  if (fs.existsSync(AUTH_BASE_DIR)) {
+    const walk = (dir, prefix = '') => {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const ent of entries) {
+        const full = path.join(dir, ent.name);
+        const rel = prefix ? `${prefix}/${ent.name}` : ent.name;
+        if (ent.isDirectory()) {
+          walk(full, rel);
+        } else if (ent.name.endsWith('.json')) {
+          try {
+            backup[rel] = fs.readFileSync(full, 'utf8');
+          } catch {}
+        }
+      }
+    };
+    walk(AUTH_BASE_DIR);
+  }
+  res.setHeader('Content-Disposition', 'attachment; filename="openwa-sessions-backup.json"');
+  res.json({
+    timestamp: new Date().toISOString(),
+    sessions: registeredSessions,
+    files: backup
+  });
+});
+
+// Restore sessions from JSON
+app.post('/api/restore', (req, res) => {
+  try {
+    const { files, sessions: savedSessions } = req.body;
+    if (!files || typeof files !== 'object') {
+      return res.status(400).json({ error: 'Invalid backup payload' });
+    }
+    fs.mkdirSync(AUTH_BASE_DIR, { recursive: true });
+    for (const [relPath, content] of Object.entries(files)) {
+      const full = path.join(AUTH_BASE_DIR, relPath);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, typeof content === 'string' ? content : JSON.stringify(content), 'utf8');
+    }
+    if (Array.isArray(savedSessions) && savedSessions.length > 0) {
+      registeredSessions = savedSessions;
+      saveRegisteredSessions();
+    }
+    res.json({ success: true, message: 'Sessions restored! Reconnecting...' });
+    setTimeout(() => startAllWhatsAppSessions(), 2000);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // List all devices / sessions
 app.get('/api/devices', (req, res) => {
@@ -2134,6 +2261,18 @@ app.get('/', (req, res) => {
 </html>`);
 });
 
+// ==================== 24/7 KEEP-ALIVE WORKER ====================
+function startKeepAliveWorker() {
+  const targetUrl = process.env.RENDER_EXTERNAL_URL || process.env.APP_URL || 'https://my-whatsapp-forwarder.onrender.com';
+  if (!targetUrl.startsWith('http')) return;
+  console.log(`💓 [Keep-Alive] 24/7 worker active. Auto-pinging ${targetUrl}/api/health every 8 minutes...`);
+  setInterval(async () => {
+    try {
+      await fetch(`${targetUrl}/api/health`, { headers: { 'User-Agent': 'OpenWA-KeepAlive/1.0' } });
+    } catch {}
+  }, 8 * 60 * 1000);
+}
+
 // Start server and initialize all WhatsApp sessions
 app.listen(PORT, async () => {
   console.log(`
@@ -2146,4 +2285,5 @@ app.listen(PORT, async () => {
 ======================================================
 `);
   await startAllWhatsAppSessions();
+  startKeepAliveWorker();
 });
